@@ -268,27 +268,150 @@ impl JsonRpcRequestProcessor {
         0u64
     }
 
+    // fn simulate_transaction_unchecked(
+    //     &self,
+    //     transaction: &SanitizedTransaction,
+    //     enable_cpi_recording: bool,
+    // ) -> TransactionSimulationResult {
+    //     let mut mock_bank = MockBankCallback::new(self.account_map.clone());
+    //     let transaction_processor = self.transaction_processor.read().unwrap();
+    //
+    //     let account_keys = transaction.message().account_keys();
+    //     let number_of_accounts = account_keys.len();
+    //     let account_overrides = AccountOverrides::default();
+    //
+    //     let fork_graph = Arc::new(RwLock::new(MockForkGraph {}));
+    //
+    //     create_executable_environment(
+    //         fork_graph.clone(),
+    //         &account_keys,
+    //         &mut mock_bank,
+    //         &transaction_processor,
+    //     );
+    //
+    //     // Add the system program builtin.
+    //     transaction_processor.add_builtin(
+    //         &mock_bank,
+    //         solana_system_program::id(),
+    //         "system_program",
+    //         ProgramCacheEntry::new_builtin(
+    //             0,
+    //             b"system_program".len(),
+    //             system_processor::Entrypoint::vm,
+    //         ),
+    //     );
+    //     // Add the BPF Loader v2 builtin, for the SPL Token program.
+    //     transaction_processor.add_builtin(
+    //         &mock_bank,
+    //         solana_sdk::bpf_loader_upgradeable::id(),
+    //         "solana_bpf_loader_upgradeable_program",
+    //         ProgramCacheEntry::new_builtin(
+    //             0,
+    //             b"solana_bpf_loader_upgradeable_program".len(),
+    //             solana_bpf_loader_program::Entrypoint::vm,
+    //         ),
+    //     );
+    //
+    //     let batch = self.prepare_unlocked_batch_from_single_tx(transaction);
+    //     let LoadAndExecuteTransactionsOutput {
+    //         mut processing_results,
+    //         ..
+    //     } = self.load_and_execute_transactions(
+    //         &mock_bank,
+    //         &batch,
+    //         // After simulation, transactions will need to be forwarded to the leader
+    //         // for processing. During forwarding, the transaction could expire if the
+    //         // delay is not accounted for.
+    //         MAX_PROCESSING_AGE - MAX_TRANSACTION_FORWARDING_DELAY,
+    //         TransactionProcessingConfig {
+    //             account_overrides: Some(&account_overrides),
+    //             check_program_modification_slot: false,
+    //             compute_budget: Some(ComputeBudget::default()),
+    //             log_messages_bytes_limit: None,
+    //             limit_to_load_programs: true,
+    //             recording_config: ExecutionRecordingConfig {
+    //                 enable_cpi_recording,
+    //                 enable_log_recording: true,
+    //                 enable_return_data_recording: true,
+    //             },
+    //             transaction_account_lock_limit: Some(64),
+    //         },
+    //     );
+    //
+    //     let processing_result = processing_results
+    //         .pop()
+    //         .unwrap_or(Err(TransactionError::InvalidProgramForExecution));
+    //     let flattened_result = processing_result.flattened_result();
+    //     let (post_simulation_accounts, logs, return_data, inner_instructions) =
+    //         match processing_result {
+    //             Ok(processed_tx) => match processed_tx {
+    //                 ProcessedTransaction::Executed(executed_tx) => {
+    //                     let details = executed_tx.execution_details;
+    //                     let post_simulation_accounts = executed_tx
+    //                         .loaded_transaction
+    //                         .accounts
+    //                         .into_iter()
+    //                         .take(number_of_accounts)
+    //                         .collect::<Vec<_>>();
+    //                     (
+    //                         post_simulation_accounts,
+    //                         details.log_messages,
+    //                         details.return_data,
+    //                         details.inner_instructions,
+    //                     )
+    //                 }
+    //                 ProcessedTransaction::FeesOnly(_) => (vec![], None, None, None),
+    //             },
+    //             Err(_) => (vec![], None, None, None),
+    //         };
+    //     let logs = logs.unwrap_or_default();
+    //     let units_consumed: u64 = 0;
+    //
+    //     TransactionSimulationResult {
+    //         result: flattened_result,
+    //         logs,
+    //         post_simulation_accounts,
+    //         units_consumed,
+    //         return_data,
+    //         inner_instructions,
+    //     }
+    // }
     fn simulate_transaction_unchecked(
         &self,
         transaction: &SanitizedTransaction,
         enable_cpi_recording: bool,
     ) -> TransactionSimulationResult {
+        use std::time::Instant;
+
+        println!("simulation - starting transaction simulation");
+        let total_start = Instant::now();
+
+        // 初始化阶段开始
+        let init_start = Instant::now();
         let mut mock_bank = MockBankCallback::new(self.account_map.clone());
         let transaction_processor = self.transaction_processor.read().unwrap();
+        println!("simulation - bank and processor init took: {:?}", init_start.elapsed());
 
         let account_keys = transaction.message().account_keys();
         let number_of_accounts = account_keys.len();
         let account_overrides = AccountOverrides::default();
 
+        let fork_graph_start = Instant::now();
         let fork_graph = Arc::new(RwLock::new(MockForkGraph {}));
+        println!("simulation - fork graph creation took: {:?}", fork_graph_start.elapsed());
 
+        // 创建执行环境
+        let env_start = Instant::now();
         create_executable_environment(
             fork_graph.clone(),
             &account_keys,
             &mut mock_bank,
             &transaction_processor,
         );
+        println!("simulation - create executable environment took: {:?}", env_start.elapsed());
 
+        // 添加内置程序
+        let builtin_start = Instant::now();
         // Add the system program builtin.
         transaction_processor.add_builtin(
             &mock_bank,
@@ -311,8 +434,15 @@ impl JsonRpcRequestProcessor {
                 solana_bpf_loader_program::Entrypoint::vm,
             ),
         );
+        println!("simulation - adding builtin programs took: {:?}", builtin_start.elapsed());
 
+        // 准备批处理
+        let batch_start = Instant::now();
         let batch = self.prepare_unlocked_batch_from_single_tx(transaction);
+        println!("simulation - batch preparation took: {:?}", batch_start.elapsed());
+
+        // 执行阶段开始 - 这是核心执行部分
+        let execution_start = Instant::now();
         let LoadAndExecuteTransactionsOutput {
             mut processing_results,
             ..
@@ -337,7 +467,11 @@ impl JsonRpcRequestProcessor {
                 transaction_account_lock_limit: Some(64),
             },
         );
+        let execution_duration = execution_start.elapsed();
+        println!("simulation - transaction execution took: {:?}", execution_duration);
 
+        // 处理结果阶段
+        let result_processing_start = Instant::now();
         let processing_result = processing_results
             .pop()
             .unwrap_or(Err(TransactionError::InvalidProgramForExecution));
@@ -366,6 +500,11 @@ impl JsonRpcRequestProcessor {
             };
         let logs = logs.unwrap_or_default();
         let units_consumed: u64 = 0;
+        println!("simulation - result processing took: {:?}", result_processing_start.elapsed());
+
+        // 总计时间
+        println!("simulation - total simulation time: {:?}", total_start.elapsed());
+        println!("simulation - number of log messages: {}", logs.len());
 
         TransactionSimulationResult {
             result: flattened_result,
@@ -524,6 +663,84 @@ impl JsonRpcRequestProcessor {
         (last_hash, last_lamports_per_signature)
     }
 
+    // fn load_and_execute_transactions(
+    //     &self,
+    //     bank: &MockBankCallback,
+    //     batch: &TransactionBatch,
+    //     max_age: usize,
+    //     processing_config: TransactionProcessingConfig,
+    // ) -> LoadAndExecuteTransactionsOutput {
+    //     let sanitized_txs = batch.sanitized_transactions();
+    //     debug!("processing transactions: {}", sanitized_txs.len());
+    //     let mut error_counters = TransactionErrorMetrics::default();
+    //
+    //     let check_results = self.check_age(
+    //         sanitized_txs,
+    //         batch.lock_results(),
+    //         max_age,
+    //         &mut error_counters,
+    //     );
+    //
+    //     let (blockhash, lamports_per_signature) = self.last_blockhash_and_lamports_per_signature();
+    //     let processing_environment = TransactionProcessingEnvironment {
+    //         blockhash,
+    //         blockhash_lamports_per_signature: lamports_per_signature,
+    //         epoch_total_stake: 0,
+    //         feature_set: Arc::clone(&bank.feature_set),
+    //         fee_lamports_per_signature: lamports_per_signature,
+    //         rent_collector: None,
+    //     };
+    //
+    //     let sanitized_output = self
+    //         .transaction_processor
+    //         .read()
+    //         .unwrap()
+    //         .load_and_execute_sanitized_transactions(
+    //             bank,
+    //             sanitized_txs,
+    //             check_results,
+    //             &processing_environment,
+    //             &processing_config,
+    //         );
+    //
+    //     let err_count = &mut error_counters.total;
+    //
+    //     let mut processed_counts = ProcessedTransactionCounts::default();
+    //     for (processing_result, tx) in sanitized_output
+    //         .processing_results
+    //         .iter()
+    //         .zip(sanitized_txs)
+    //     {
+    //         if processing_result.was_processed() {
+    //             // Signature count must be accumulated only if the transaction
+    //             // is processed, otherwise a mismatched count between banking
+    //             // and replay could occur
+    //             processed_counts.signature_count +=
+    //                 u64::from(tx.message().header().num_required_signatures);
+    //             processed_counts.processed_transactions_count += 1;
+    //
+    //             if !tx.is_simple_vote_transaction() {
+    //                 processed_counts.processed_non_vote_transactions_count += 1;
+    //             }
+    //         }
+    //
+    //         match processing_result.flattened_result() {
+    //             Ok(()) => {
+    //                 processed_counts.processed_with_successful_result_count += 1;
+    //             }
+    //             Err(err) => {
+    //                 if err_count.0 == 0 {
+    //                     debug!("tx error: {:?} {:?}", err, tx);
+    //                 }
+    //                 *err_count += 1;
+    //             }
+    //         }
+    //     }
+    //
+    //     LoadAndExecuteTransactionsOutput {
+    //         processing_results: sanitized_output.processing_results,
+    //     }
+    // }
     fn load_and_execute_transactions(
         &self,
         bank: &MockBankCallback,
@@ -531,17 +748,27 @@ impl JsonRpcRequestProcessor {
         max_age: usize,
         processing_config: TransactionProcessingConfig,
     ) -> LoadAndExecuteTransactionsOutput {
-        let sanitized_txs = batch.sanitized_transactions();
-        debug!("processing transactions: {}", sanitized_txs.len());
-        let mut error_counters = TransactionErrorMetrics::default();
+        use std::time::Instant;
 
+        let total_execution_start = Instant::now();
+        println!("execution - starting transaction execution");
+
+        let tx_prep_start = Instant::now();
+        let sanitized_txs = batch.sanitized_transactions();
+        println!("execution - processing transactions: {}", sanitized_txs.len());
+        let mut error_counters = TransactionErrorMetrics::default();
+        println!("execution - transaction preparation took: {:?}", tx_prep_start.elapsed());
+
+        let age_check_start = Instant::now();
         let check_results = self.check_age(
             sanitized_txs,
             batch.lock_results(),
             max_age,
             &mut error_counters,
         );
+        println!("execution - age check took: {:?}", age_check_start.elapsed());
 
+        let env_prep_start = Instant::now();
         let (blockhash, lamports_per_signature) = self.last_blockhash_and_lamports_per_signature();
         let processing_environment = TransactionProcessingEnvironment {
             blockhash,
@@ -551,7 +778,10 @@ impl JsonRpcRequestProcessor {
             fee_lamports_per_signature: lamports_per_signature,
             rent_collector: None,
         };
+        println!("execution - environment preparation took: {:?}", env_prep_start.elapsed());
 
+        // 这是核心执行部分 - 真正执行交易指令逻辑
+        let core_execution_start = Instant::now();
         let sanitized_output = self
             .transaction_processor
             .read()
@@ -563,7 +793,10 @@ impl JsonRpcRequestProcessor {
                 &processing_environment,
                 &processing_config,
             );
+        let core_execution_duration = core_execution_start.elapsed();
+        println!("execution - core transaction execution took: {:?}", core_execution_duration);
 
+        let stats_start = Instant::now();
         let err_count = &mut error_counters.total;
 
         let mut processed_counts = ProcessedTransactionCounts::default();
@@ -591,12 +824,19 @@ impl JsonRpcRequestProcessor {
                 }
                 Err(err) => {
                     if err_count.0 == 0 {
-                        debug!("tx error: {:?} {:?}", err, tx);
+                        println!("execution - tx error: {:?}", err);
                     }
                     *err_count += 1;
                 }
             }
         }
+        println!("execution - statistics processing took: {:?}", stats_start.elapsed());
+
+        // 总计时间
+        println!("execution - total execution time: {:?}", total_execution_start.elapsed());
+        println!("execution - successfully processed: {}/{}",
+                 processed_counts.processed_with_successful_result_count,
+                 processed_counts.processed_transactions_count);
 
         LoadAndExecuteTransactionsOutput {
             processing_results: sanitized_output.processing_results,
@@ -915,8 +1155,313 @@ fn sanitize_transaction(
     .map_err(|err| Error::invalid_params(format!("invalid transaction: {err}")))
 }
 
+// #[cfg(test)]
+// mod tests {
+//     use spl_token_2022::solana_program::bpf_loader_upgradeable;
+//     use {
+//         super::*,
+//         solana_sdk::{
+//             instruction::{AccountMeta, Instruction},
+//             message::Message,
+//             pubkey::Pubkey,
+//             signature::{Keypair, Signer},
+//             transaction::Transaction,
+//         },
+//         std::{str::FromStr, fs, path::PathBuf},
+//     };
+//
+//     fn create_test_processor() -> JsonRpcRequestProcessor {
+//         let accounts_path = PathBuf::from("/Users/barry/binance/agave/svm/examples/json-rpc/program/accounts-bak.json");
+//         let ledger_path = PathBuf::from("");
+//
+//         let config = JsonRpcConfig {
+//             accounts_path,
+//             ledger_path,
+//             rpc_threads: 1,
+//             rpc_niceness_adj: 0,
+//             max_request_body_size: Some(MAX_REQUEST_BODY_SIZE),
+//         };
+//
+//         let exit = create_exit(Arc::new(AtomicBool::new(false)));
+//         JsonRpcRequestProcessor::new(config, exit)
+//     }
+//
+//     #[test]
+//     fn test_simulate_transaction() {
+//         let processor = create_test_processor();
+//
+//         // Create player from base58 private key
+//         let player_keypair_str = "4Z4niS25RQqJrMwAZTSChhDmMQhQc6CQLD2yAzuwp3hWJKN2kdmEdJimMiBqLoiUt3BuVPbV735wJyREA4Fr8NiL";
+//         let player_keypair_bytes = bs58::decode(player_keypair_str)
+//             .into_vec()
+//             .unwrap();
+//         let player = Keypair::from_bytes(&player_keypair_bytes).unwrap();
+//
+//         let program_id = Pubkey::from_str("qpTWpLBhVs4N8odNY21sK2JBVGtgRxSsQFpTk9tR6Dr").unwrap();
+//
+//         // Create a short seed for greeting account
+//         // let greeting_seed = "hello";
+//         let greeting_pubkey = Pubkey::create_with_seed(
+//             &player.pubkey(),
+//             "ARBXU1iHSYipb5NgamSgUNnR5sxrfAsN25RUXJ5pY5bE",
+//             &program_id,
+//         ).unwrap();
+//
+//         // println!("Player pubkey: {:?}", player.pubkey());
+//         // println!("Greeting pubkey: {:?}", greeting_pubkey);
+//
+//         // Create instruction data
+//         let data = [1u8];
+//         let instruction = Instruction::new_with_bytes(
+//             program_id,
+//             &data,
+//             vec![AccountMeta::new(greeting_pubkey, false)],
+//         );
+//
+//         // Create transaction
+//         let message = Message::new(&[instruction], Some(&player.pubkey()));
+//         let transaction = Transaction::new(
+//             &[&player],
+//             message,
+//             Hash::default(),
+//         );
+//
+//         // Convert to sanitized transaction
+//         let sanitized_transaction = SanitizedTransaction::try_create(
+//             transaction.into(),
+//             MessageHash::Compute,
+//             None,
+//             processor.clone(),
+//             &HashSet::new(),
+//         )
+//             .unwrap();
+//
+//         // Execute transaction simulation
+//         let simulation_result = processor.simulate_transaction_unchecked(
+//             &sanitized_transaction,
+//             true, // Enable CPI recording
+//         );
+//
+//         // Print logs for debugging
+//         // println!("Simulation logs: {:?}", simulation_result.logs);
+//         // println!("Simulation result: {:?}", simulation_result.result);
+//
+//         // Verify results
+//         assert!(simulation_result.result.is_ok(), "Transaction simulation failed");
+//         assert!(!simulation_result.logs.is_empty(), "Expected logs to be present");
+//     }
+// }
+
 fn verify_pubkey(input: &str) -> Result<Pubkey> {
     input
         .parse()
         .map_err(|e| Error::invalid_params(format!("Invalid param: {e:?}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use spl_token_2022::solana_program::bpf_loader_upgradeable;
+    use {
+        super::*,
+        solana_sdk::{
+            instruction::{AccountMeta, Instruction},
+            message::Message,
+            pubkey::Pubkey,
+            signature::{Keypair, Signer},
+            transaction::Transaction,
+        },
+        std::{str::FromStr, fs, path::PathBuf, time::Instant},
+    };
+
+    fn create_test_processor() -> JsonRpcRequestProcessor {
+        let start = Instant::now();
+
+        let accounts_path = PathBuf::from("/Users/barry/binance/agave/svm/examples/json-rpc/program/accounts-bak.json");
+        let ledger_path = PathBuf::from("");
+
+        let config = JsonRpcConfig {
+            accounts_path,
+            ledger_path,
+            rpc_threads: 1,
+            rpc_niceness_adj: 0,
+            max_request_body_size: Some(MAX_REQUEST_BODY_SIZE),
+        };
+        println!("Config setup took: {:?}", start.elapsed());
+
+        let exit_start = Instant::now();
+        let exit = create_exit(Arc::new(AtomicBool::new(false)));
+        println!("Exit creation took: {:?}", exit_start.elapsed());
+
+        let processor_start = Instant::now();
+        let processor = JsonRpcRequestProcessor::new(config, exit);
+        println!("Processor initialization took: {:?}", processor_start.elapsed());
+
+        processor
+    }
+
+    #[test]
+    fn test_simulate_transaction() {
+        let total_start = Instant::now();
+
+        let processor_setup_start = Instant::now();
+        let processor = create_test_processor();
+        println!("Processor setup total: {:?}", processor_setup_start.elapsed());
+
+        // Create player from base58 private key
+        let keypair_start = Instant::now();
+        let player_keypair_str = "4Z4niS25RQqJrMwAZTSChhDmMQhQc6CQLD2yAzuwp3hWJKN2kdmEdJimMiBqLoiUt3BuVPbV735wJyREA4Fr8NiL";
+        let player_keypair_bytes = bs58::decode(player_keypair_str)
+            .into_vec()
+            .unwrap();
+        let player = Keypair::from_bytes(&player_keypair_bytes).unwrap();
+        println!("Key pair creation took: {:?}", keypair_start.elapsed());
+
+        let pubkey_start = Instant::now();
+        let program_id = Pubkey::from_str("9icUdyHNJLiBjAD57sVEDcod7exWh2mwFGVYtL5Yb6Va").unwrap();
+
+        // let greeting_seed = "hello";
+        // let greeting_pubkey = Pubkey::create_with_seed(
+        //     &player.pubkey(),
+        //     greeting_seed,
+        //     &program_id,
+        // ).unwrap();
+
+        let greeting_pubkey = Pubkey::from_str("9icUdyHNJLiBjAD57sVEDcod7exWh2mwFGVYtL5Yb6Va").unwrap();
+
+        // Create instruction data
+        let instruction_start = Instant::now();
+        let data = [1u8];
+        let instruction = Instruction::new_with_bytes(
+            program_id,
+            &data,
+            vec![AccountMeta::new(greeting_pubkey, false)],
+        );
+        println!("Instruction creation took: {:?}", instruction_start.elapsed());
+
+        // Create transaction
+        let transaction_start = Instant::now();
+        let message = Message::new(&[instruction], Some(&player.pubkey()));
+        let transaction = Transaction::new(
+            &[&player],
+            message,
+            Hash::default(),
+        );
+        println!("Transaction creation took: {:?}", transaction_start.elapsed());
+
+        // Convert to sanitized transaction
+        let sanitized_start = Instant::now();
+        let sanitized_transaction = SanitizedTransaction::try_create(
+            transaction.into(),
+            MessageHash::Compute,
+            None,
+            processor.clone(),
+            &HashSet::new(),
+        )
+            .unwrap();
+        println!("Transaction sanitization took: {:?}", sanitized_start.elapsed());
+
+        // Execute transaction simulation
+        let simulation_start = Instant::now();
+        let simulation_result = processor.simulate_transaction_unchecked(
+            &sanitized_transaction,
+            true, // Enable CPI recording
+        );
+        println!("Transaction simulation took: {:?}", simulation_start.elapsed());
+
+        // Print debug info
+        println!("Simulation logs length: {}", simulation_result.logs.len());
+        println!("Simulation result: {:?}", simulation_result.result.is_ok());
+
+        println!("Total test execution time: {:?}", total_start.elapsed());
+
+        // Verify results
+        assert!(simulation_result.result.is_ok(), "Transaction simulation failed");
+        assert!(!simulation_result.logs.is_empty(), "Expected logs to be present");
+    }
+}
+
+pub fn run_transaction_simulation() -> bool {
+    use std::panic::catch_unwind;
+    use std::collections::HashSet;
+    use std::path::PathBuf;
+    use std::str::FromStr;
+    use std::sync::{Arc, atomic::AtomicBool};
+
+    use solana_sdk::{
+        hash::Hash,
+        instruction::{AccountMeta, Instruction},
+        message::Message,
+        pubkey::Pubkey,
+        signature::{Keypair, Signer},
+        transaction::{MessageHash, SanitizedTransaction, Transaction},
+    };
+
+    match catch_unwind(|| {
+        let accounts_path = PathBuf::from("/Users/barry/binance/agave/svm/examples/json-rpc/program/accounts-bak.json");
+        let ledger_path = PathBuf::from("");
+
+        let config = JsonRpcConfig {
+            accounts_path,
+            ledger_path,
+            rpc_threads: 1,
+            rpc_niceness_adj: 0,
+            max_request_body_size: Some(MAX_REQUEST_BODY_SIZE),
+        };
+
+        let exit = create_exit(Arc::new(AtomicBool::new(false)));
+        let processor = JsonRpcRequestProcessor::new(config, exit);
+
+        let player_keypair_str = "4Z4niS25RQqJrMwAZTSChhDmMQhQc6CQLD2yAzuwp3hWJKN2kdmEdJimMiBqLoiUt3BuVPbV735wJyREA4Fr8NiL";
+        let player_keypair_bytes = bs58::decode(player_keypair_str)
+            .into_vec()
+            .unwrap();
+        let player = Keypair::from_bytes(&player_keypair_bytes).unwrap();
+
+        let program_id = Pubkey::from_str("4SxzrZndMnznt1qsY6ycFCXjygRfeX4dpLF2R8tz5FfD").unwrap();
+
+        // let greeting_seed = "hello";
+        // let greeting_pubkey = Pubkey::create_with_seed(
+        //     &player.pubkey(),
+        //     greeting_seed,
+        //     &program_id,
+        // ).unwrap();
+
+        let greeting_pubkey = Pubkey::from_str("9icUdyHNJLiBjAD57sVEDcod7exWh2mwFGVYtL5Yb6Va").unwrap();
+
+        let data = [1u8];
+        let instruction = Instruction::new_with_bytes(
+            program_id,
+            &data,
+            vec![AccountMeta::new(greeting_pubkey, false)],
+        );
+
+        let message = Message::new(&[instruction], Some(&player.pubkey()));
+        let transaction = Transaction::new(
+            &[&player],
+            message,
+            Hash::default(),
+        );
+
+        let sanitized_transaction = SanitizedTransaction::try_create(
+            transaction.into(),
+            MessageHash::Compute,
+            None,
+            processor.clone(),
+            &HashSet::new(),
+        ).unwrap();
+
+        let simulation_result = processor.simulate_transaction_unchecked(
+            &sanitized_transaction,
+            true, // 启用 CPI 记录
+        );
+
+        // Print logs for debugging
+        println!("Simulation logs: {:?}", simulation_result.logs);
+        println!("Simulation result: {:?}", simulation_result.result);
+
+        simulation_result.result.is_ok()
+    }) {
+        Ok(result) => result,
+        Err(_) => false,
+    }
 }

@@ -10,7 +10,9 @@ frozen-abi = []
 
 [dependencies]
 borsh = "0.9"
-solana-program = { path = "../../../../sdk/program", version = "=2.2.0" }
+solana-program = { path = "../../../../sdk/program", version = "=2.2.1" }
+uint = { version = "0.9", default-features = false }
+lazy_static = "1.4.0"
 
 [lib]
 name = "program"

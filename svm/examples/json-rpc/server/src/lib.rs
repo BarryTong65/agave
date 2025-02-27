@@ -17,7 +17,6 @@ use {
 pub mod rpc_process;
 pub mod rpc_service;
 pub mod svm_bridge;
-
 fn main() {
     env_logger::init();
     let matches = App::new("solana-json-rpc")
@@ -73,4 +72,10 @@ fn main() {
         }
         thread::sleep(refresh_interval);
     }
+}
+
+
+#[no_mangle]
+pub extern "C" fn simulate_transaction_c() -> bool {
+    crate::rpc_process::run_transaction_simulation()
 }

@@ -5,6 +5,10 @@ version = { workspace = true }
 edition = { workspace = true }
 publish = false
 
+[lib]
+name = "json_rpc_server"
+crate-type = ["cdylib", "staticlib"]
+
 [dependencies]
 base64 = { workspace = true }
 bincode = { workspace = true }

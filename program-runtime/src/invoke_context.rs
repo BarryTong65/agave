@@ -512,9 +512,16 @@ impl<'a> InvokeContext<'a> {
         compute_units_consumed: &mut u64,
         timings: &mut ExecuteTimings,
     ) -> Result<(), InstructionError> {
+        use std::time::Instant;
+        let total_process_start = Instant::now();
+        println!("process_executable_chain - starting chain execution");
+
+        let instruction_context_start = Instant::now();
         let instruction_context = self.transaction_context.get_current_instruction_context()?;
         let process_executable_chain_time = Measure::start("process_executable_chain_time");
+        println!("process_executable_chain - instruction context setup took: {:?}", instruction_context_start.elapsed());
 
+        let builtin_id_start = Instant::now();
         let builtin_id = {
             debug_assert!(instruction_context.get_number_of_program_accounts() <= 1);
             let borrowed_root_account = instruction_context
@@ -527,7 +534,9 @@ impl<'a> InvokeContext<'a> {
                 *owner_id
             }
         };
+        println!("process_executable_chain - builtin ID resolution took: {:?}", builtin_id_start.elapsed());
 
+        let program_lookup_start = Instant::now();
         // The Murmur3 hash value (used by RBPF) of the string "entrypoint"
         const ENTRYPOINT_KEY: u32 = 0x71E3CF81;
         let entry = self
@@ -541,15 +550,23 @@ impl<'a> InvokeContext<'a> {
                 .map(|(_name, function)| function),
             _ => None,
         }
-        .ok_or(InstructionError::UnsupportedProgramId)?;
+            .ok_or(InstructionError::UnsupportedProgramId)?;
         entry.ix_usage_counter.fetch_add(1, Ordering::Relaxed);
+        println!("process_executable_chain - program and function lookup took: {:?}", program_lookup_start.elapsed());
 
+        let return_data_start = Instant::now();
         let program_id = *instruction_context.get_last_program_key(self.transaction_context)?;
         self.transaction_context
             .set_return_data(program_id, Vec::new())?;
+        println!("process_executable_chain - return data setup took: {:?}", return_data_start.elapsed());
+
+        let logger_start = Instant::now();
         let logger = self.get_log_collector();
         stable_log::program_invoke(&logger, &program_id, self.get_stack_height());
         let pre_remaining_units = self.get_remaining();
+        println!("process_executable_chain - logger setup took: {:?}", logger_start.elapsed());
+
+        let vm_setup_start = Instant::now();
         // In program-runtime v2 we will create this VM instance only once per transaction.
         // `program_runtime_environment_v2.get_config()` will be used instead of `mock_config`.
         // For now, only built-ins are invoked from here, so the VM and its Config are irrelevant.
@@ -567,10 +584,18 @@ impl<'a> InvokeContext<'a> {
             empty_memory_mapping,
             0,
         );
+        println!("process_executable_chain - VM setup took: {:?}", vm_setup_start.elapsed());
+
+        let execution_start = Instant::now();
+        println!("process_executable_chain - invoking function");
         vm.invoke_function(function);
+        println!("process_executable_chain - function execution took: {:?}", execution_start.elapsed());
+
+        let result_processing_start = Instant::now();
         let result = match vm.program_result {
             ProgramResult::Ok(_) => {
                 stable_log::program_success(&logger, &program_id);
+                println!("process_executable_chain - program executed successfully");
                 Ok(())
             }
             ProgramResult::Err(ref err) => {
@@ -578,28 +603,44 @@ impl<'a> InvokeContext<'a> {
                     if let Some(instruction_err) = syscall_error.downcast_ref::<InstructionError>()
                     {
                         stable_log::program_failure(&logger, &program_id, instruction_err);
+                        println!("process_executable_chain - program failed with instruction error: {:?}", instruction_err);
                         Err(instruction_err.clone())
                     } else {
                         stable_log::program_failure(&logger, &program_id, syscall_error);
+                        println!("process_executable_chain - program failed with syscall error");
                         Err(InstructionError::ProgramFailedToComplete)
                     }
                 } else {
                     stable_log::program_failure(&logger, &program_id, err);
+                    println!("process_executable_chain - program failed with generic error");
                     Err(InstructionError::ProgramFailedToComplete)
                 }
             }
         };
+        println!("process_executable_chain - result processing took: {:?}", result_processing_start.elapsed());
+
+        let compute_units_start = Instant::now();
         let post_remaining_units = self.get_remaining();
         *compute_units_consumed = pre_remaining_units.saturating_sub(post_remaining_units);
+        println!("process_executable_chain - compute units calculation: {} units consumed", *compute_units_consumed);
+        println!("process_executable_chain - compute units calculation took: {:?}", compute_units_start.elapsed());
 
+        let validation_start = Instant::now();
         if builtin_id == program_id && result.is_ok() && *compute_units_consumed == 0 {
+            println!("process_executable_chain - validation failed: builtin program must consume compute units");
+            println!("process_executable_chain - total processing time: {:?}", total_process_start.elapsed());
             return Err(InstructionError::BuiltinProgramsMustConsumeComputeUnits);
         }
+        println!("process_executable_chain - validation took: {:?}", validation_start.elapsed());
 
+        let finalization_start = Instant::now();
         timings
             .execute_accessories
             .process_instructions
             .process_executable_chain_us += process_executable_chain_time.end_as_us();
+        println!("process_executable_chain - finalization took: {:?}", finalization_start.elapsed());
+        println!("process_executable_chain - total processing time: {:?}", total_process_start.elapsed());
+
         result
     }
 

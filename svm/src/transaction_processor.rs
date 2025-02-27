@@ -319,6 +319,196 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
     }
 
     /// Main entrypoint to the SVM.
+    // pub fn load_and_execute_sanitized_transactions<CB: TransactionProcessingCallback>(
+    //     &self,
+    //     callbacks: &CB,
+    //     sanitized_txs: &[impl SVMTransaction],
+    //     check_results: Vec<TransactionCheckResult>,
+    //     environment: &TransactionProcessingEnvironment,
+    //     config: &TransactionProcessingConfig,
+    // ) -> LoadAndExecuteSanitizedTransactionsOutput {
+    //     // If `check_results` does not have the same length as `sanitized_txs`,
+    //     // transactions could be truncated as a result of `.iter().zip()` in
+    //     // many of the below methods.
+    //     // See <https://doc.rust-lang.org/std/iter/trait.Iterator.html#method.zip>.
+    //     debug_assert_eq!(
+    //         sanitized_txs.len(),
+    //         check_results.len(),
+    //         "Length of check_results does not match length of sanitized_txs"
+    //     );
+    //
+    //     // Initialize metrics.
+    //     let mut error_metrics = TransactionErrorMetrics::default();
+    //     let mut execute_timings = ExecuteTimings::default();
+    //     let mut processing_results = Vec::with_capacity(sanitized_txs.len());
+    //
+    //     let native_loader = native_loader::id();
+    //     let (program_accounts_map, filter_executable_us) = measure_us!({
+    //         let mut program_accounts_map = Self::filter_executable_program_accounts(
+    //             callbacks,
+    //             sanitized_txs,
+    //             &check_results,
+    //             PROGRAM_OWNERS,
+    //         );
+    //         for builtin_program in self.builtin_program_ids.read().unwrap().iter() {
+    //             program_accounts_map.insert(*builtin_program, (&native_loader, 0));
+    //         }
+    //         program_accounts_map
+    //     });
+    //
+    //     let (mut program_cache_for_tx_batch, program_cache_us) = measure_us!({
+    //         let program_cache_for_tx_batch = self.replenish_program_cache(
+    //             callbacks,
+    //             &program_accounts_map,
+    //             &mut execute_timings,
+    //             config.check_program_modification_slot,
+    //             config.limit_to_load_programs,
+    //         );
+    //
+    //         if program_cache_for_tx_batch.hit_max_limit {
+    //             return LoadAndExecuteSanitizedTransactionsOutput {
+    //                 error_metrics,
+    //                 execute_timings,
+    //                 processing_results: (0..sanitized_txs.len())
+    //                     .map(|_| Err(TransactionError::ProgramCacheHitMaxLimit))
+    //                     .collect(),
+    //             };
+    //         }
+    //
+    //         program_cache_for_tx_batch
+    //     });
+    //
+    //     // Determine a capacity for the internal account cache. This
+    //     // over-allocates but avoids ever reallocating, and spares us from
+    //     // deduplicating the account keys lists.
+    //     let account_keys_in_batch = sanitized_txs.iter().map(|tx| tx.account_keys().len()).sum();
+    //
+    //     // Create the account loader, which wraps all external account fetching.
+    //     let mut account_loader = AccountLoader::new_with_account_cache_capacity(
+    //         config.account_overrides,
+    //         callbacks,
+    //         environment.feature_set.clone(),
+    //         account_keys_in_batch,
+    //     );
+    //
+    //     let enable_transaction_loading_failure_fees = environment
+    //         .feature_set
+    //         .is_active(&enable_transaction_loading_failure_fees::id());
+    //
+    //     let (mut validate_fees_us, mut load_us, mut execution_us): (u64, u64, u64) = (0, 0, 0);
+    //
+    //     // Validate, execute, and collect results from each transaction in order.
+    //     // With SIMD83, transactions must be executed in order, because transactions
+    //     // in the same batch may modify the same accounts. Transaction order is
+    //     // preserved within entries written to the ledger.
+    //     for (tx, check_result) in sanitized_txs.iter().zip(check_results) {
+    //         let (validate_result, single_validate_fees_us) =
+    //             measure_us!(check_result.and_then(|tx_details| {
+    //                 Self::validate_transaction_nonce_and_fee_payer(
+    //                     &mut account_loader,
+    //                     tx,
+    //                     tx_details,
+    //                     &environment.blockhash,
+    //                     environment.fee_lamports_per_signature,
+    //                     environment
+    //                         .rent_collector
+    //                         .unwrap_or(&RentCollector::default()),
+    //                     &mut error_metrics,
+    //                     callbacks,
+    //                 )
+    //             }));
+    //         validate_fees_us = validate_fees_us.saturating_add(single_validate_fees_us);
+    //
+    //         let (load_result, single_load_us) = measure_us!(load_transaction(
+    //             &mut account_loader,
+    //             tx,
+    //             validate_result,
+    //             &mut error_metrics,
+    //             environment
+    //                 .rent_collector
+    //                 .unwrap_or(&RentCollector::default()),
+    //         ));
+    //         load_us = load_us.saturating_add(single_load_us);
+    //
+    //         let (processing_result, single_execution_us) = measure_us!(match load_result {
+    //             TransactionLoadResult::NotLoaded(err) => Err(err),
+    //             TransactionLoadResult::FeesOnly(fees_only_tx) => {
+    //                 if enable_transaction_loading_failure_fees {
+    //                     // Update loaded accounts cache with nonce and fee-payer
+    //                     account_loader
+    //                         .update_accounts_for_failed_tx(tx, &fees_only_tx.rollback_accounts);
+    //
+    //                     Ok(ProcessedTransaction::FeesOnly(Box::new(fees_only_tx)))
+    //                 } else {
+    //                     Err(fees_only_tx.load_error)
+    //                 }
+    //             }
+    //             TransactionLoadResult::Loaded(loaded_transaction) => {
+    //                 let executed_tx = self.execute_loaded_transaction(
+    //                     callbacks,
+    //                     tx,
+    //                     loaded_transaction,
+    //                     &mut execute_timings,
+    //                     &mut error_metrics,
+    //                     &mut program_cache_for_tx_batch,
+    //                     environment,
+    //                     config,
+    //                 );
+    //
+    //                 // Update loaded accounts cache with account states which might have changed.
+    //                 // Also update local program cache with modifications made by the transaction,
+    //                 // if it executed successfully.
+    //                 account_loader.update_accounts_for_executed_tx(tx, &executed_tx);
+    //                 if executed_tx.was_successful() {
+    //                     program_cache_for_tx_batch.merge(&executed_tx.programs_modified_by_tx);
+    //                 }
+    //
+    //                 Ok(ProcessedTransaction::Executed(Box::new(executed_tx)))
+    //             }
+    //         });
+    //         execution_us = execution_us.saturating_add(single_execution_us);
+    //
+    //         processing_results.push(processing_result);
+    //     }
+    //
+    //     // Skip eviction when there's no chance this particular tx batch has increased the size of
+    //     // ProgramCache entries. Note that loaded_missing is deliberately defined, so that there's
+    //     // still at least one other batch, which will evict the program cache, even after the
+    //     // occurrences of cooperative loading.
+    //     if program_cache_for_tx_batch.loaded_missing || program_cache_for_tx_batch.merged_modified {
+    //         const SHRINK_LOADED_PROGRAMS_TO_PERCENTAGE: u8 = 90;
+    //         self.program_cache
+    //             .write()
+    //             .unwrap()
+    //             .evict_using_2s_random_selection(
+    //                 Percentage::from(SHRINK_LOADED_PROGRAMS_TO_PERCENTAGE),
+    //                 self.slot,
+    //             );
+    //     }
+    //
+    //     debug!(
+    //         "load: {}us execute: {}us txs_len={}",
+    //         load_us,
+    //         execution_us,
+    //         sanitized_txs.len(),
+    //     );
+    //
+    //     execute_timings
+    //         .saturating_add_in_place(ExecuteTimingType::ValidateFeesUs, validate_fees_us);
+    //     execute_timings
+    //         .saturating_add_in_place(ExecuteTimingType::FilterExecutableUs, filter_executable_us);
+    //     execute_timings
+    //         .saturating_add_in_place(ExecuteTimingType::ProgramCacheUs, program_cache_us);
+    //     execute_timings.saturating_add_in_place(ExecuteTimingType::LoadUs, load_us);
+    //     execute_timings.saturating_add_in_place(ExecuteTimingType::ExecuteUs, execution_us);
+    //
+    //     LoadAndExecuteSanitizedTransactionsOutput {
+    //         error_metrics,
+    //         execute_timings,
+    //         processing_results,
+    //     }
+    // }
+
     pub fn load_and_execute_sanitized_transactions<CB: TransactionProcessingCallback>(
         &self,
         callbacks: &CB,
@@ -327,6 +517,11 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
         environment: &TransactionProcessingEnvironment,
         config: &TransactionProcessingConfig,
     ) -> LoadAndExecuteSanitizedTransactionsOutput {
+        use std::time::Instant;
+
+        let total_core_start = Instant::now();
+        println!("core - starting transaction core processing");
+
         // If `check_results` does not have the same length as `sanitized_txs`,
         // transactions could be truncated as a result of `.iter().zip()` in
         // many of the below methods.
@@ -338,46 +533,53 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
         );
 
         // Initialize metrics.
+        let init_start = Instant::now();
         let mut error_metrics = TransactionErrorMetrics::default();
         let mut execute_timings = ExecuteTimings::default();
         let mut processing_results = Vec::with_capacity(sanitized_txs.len());
+        println!("core - metrics initialization took: {:?}", init_start.elapsed());
 
+        let program_accounts_start = Instant::now();
         let native_loader = native_loader::id();
         let (program_accounts_map, filter_executable_us) = measure_us!({
-            let mut program_accounts_map = Self::filter_executable_program_accounts(
-                callbacks,
-                sanitized_txs,
-                &check_results,
-                PROGRAM_OWNERS,
-            );
-            for builtin_program in self.builtin_program_ids.read().unwrap().iter() {
-                program_accounts_map.insert(*builtin_program, (&native_loader, 0));
-            }
-            program_accounts_map
-        });
+        let mut program_accounts_map = Self::filter_executable_program_accounts(
+            callbacks,
+            sanitized_txs,
+            &check_results,
+            PROGRAM_OWNERS,
+        );
+        for builtin_program in self.builtin_program_ids.read().unwrap().iter() {
+            program_accounts_map.insert(*builtin_program, (&native_loader, 0));
+        }
+        program_accounts_map
+    });
+        println!("core - program accounts preparation took: {:?}", program_accounts_start.elapsed());
 
+        let program_cache_start = Instant::now();
         let (mut program_cache_for_tx_batch, program_cache_us) = measure_us!({
-            let program_cache_for_tx_batch = self.replenish_program_cache(
-                callbacks,
-                &program_accounts_map,
-                &mut execute_timings,
-                config.check_program_modification_slot,
-                config.limit_to_load_programs,
-            );
+        let program_cache_for_tx_batch = self.replenish_program_cache(
+            callbacks,
+            &program_accounts_map,
+            &mut execute_timings,
+            config.check_program_modification_slot,
+            config.limit_to_load_programs,
+        );
 
-            if program_cache_for_tx_batch.hit_max_limit {
-                return LoadAndExecuteSanitizedTransactionsOutput {
-                    error_metrics,
-                    execute_timings,
-                    processing_results: (0..sanitized_txs.len())
-                        .map(|_| Err(TransactionError::ProgramCacheHitMaxLimit))
-                        .collect(),
-                };
-            }
+        if program_cache_for_tx_batch.hit_max_limit {
+            return LoadAndExecuteSanitizedTransactionsOutput {
+                error_metrics,
+                execute_timings,
+                processing_results: (0..sanitized_txs.len())
+                    .map(|_| Err(TransactionError::ProgramCacheHitMaxLimit))
+                    .collect(),
+            };
+        }
 
-            program_cache_for_tx_batch
-        });
+        program_cache_for_tx_batch
+    });
+        println!("core - program cache replenishment took: {:?}", program_cache_start.elapsed());
 
+        let account_loader_start = Instant::now();
         // Determine a capacity for the internal account cache. This
         // over-allocates but avoids ever reallocating, and spares us from
         // deduplicating the account keys lists.
@@ -390,87 +592,108 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
             environment.feature_set.clone(),
             account_keys_in_batch,
         );
+        println!("core - account loader creation took: {:?}", account_loader_start.elapsed());
 
+        let feature_check_start = Instant::now();
         let enable_transaction_loading_failure_fees = environment
             .feature_set
             .is_active(&enable_transaction_loading_failure_fees::id());
+        println!("core - feature check took: {:?}", feature_check_start.elapsed());
 
         let (mut validate_fees_us, mut load_us, mut execution_us): (u64, u64, u64) = (0, 0, 0);
 
         // Validate, execute, and collect results from each transaction in order.
+        println!("core - starting transaction processing loop for {} transactions", sanitized_txs.len());
+        let tx_loop_start = Instant::now();
+
         // With SIMD83, transactions must be executed in order, because transactions
         // in the same batch may modify the same accounts. Transaction order is
         // preserved within entries written to the ledger.
-        for (tx, check_result) in sanitized_txs.iter().zip(check_results) {
+        for (i, (tx, check_result)) in sanitized_txs.iter().zip(check_results).enumerate() {
+            let tx_start = Instant::now();
+
+            let validate_start = Instant::now();
             let (validate_result, single_validate_fees_us) =
                 measure_us!(check_result.and_then(|tx_details| {
-                    Self::validate_transaction_nonce_and_fee_payer(
-                        &mut account_loader,
-                        tx,
-                        tx_details,
-                        &environment.blockhash,
-                        environment.fee_lamports_per_signature,
-                        environment
-                            .rent_collector
-                            .unwrap_or(&RentCollector::default()),
-                        &mut error_metrics,
-                        callbacks,
-                    )
-                }));
+                Self::validate_transaction_nonce_and_fee_payer(
+                    &mut account_loader,
+                    tx,
+                    tx_details,
+                    &environment.blockhash,
+                    environment.fee_lamports_per_signature,
+                    environment
+                        .rent_collector
+                        .unwrap_or(&RentCollector::default()),
+                    &mut error_metrics,
+                    callbacks,
+                )
+            }));
             validate_fees_us = validate_fees_us.saturating_add(single_validate_fees_us);
+            println!("core - tx[{}] validation took: {:?}", i, validate_start.elapsed());
 
+            let load_start = Instant::now();
             let (load_result, single_load_us) = measure_us!(load_transaction(
-                &mut account_loader,
-                tx,
-                validate_result,
-                &mut error_metrics,
-                environment
-                    .rent_collector
-                    .unwrap_or(&RentCollector::default()),
-            ));
+            &mut account_loader,
+            tx,
+            validate_result,
+            &mut error_metrics,
+            environment
+                .rent_collector
+                .unwrap_or(&RentCollector::default()),
+        ));
             load_us = load_us.saturating_add(single_load_us);
+            println!("core - tx[{}] loading took: {:?}", i, load_start.elapsed());
 
+            let execute_start = Instant::now();
             let (processing_result, single_execution_us) = measure_us!(match load_result {
-                TransactionLoadResult::NotLoaded(err) => Err(err),
-                TransactionLoadResult::FeesOnly(fees_only_tx) => {
-                    if enable_transaction_loading_failure_fees {
-                        // Update loaded accounts cache with nonce and fee-payer
-                        account_loader
-                            .update_accounts_for_failed_tx(tx, &fees_only_tx.rollback_accounts);
+            TransactionLoadResult::NotLoaded(err) => Err(err),
+            TransactionLoadResult::FeesOnly(fees_only_tx) => {
+                if enable_transaction_loading_failure_fees {
+                    // Update loaded accounts cache with nonce and fee-payer
+                    account_loader
+                        .update_accounts_for_failed_tx(tx, &fees_only_tx.rollback_accounts);
 
-                        Ok(ProcessedTransaction::FeesOnly(Box::new(fees_only_tx)))
-                    } else {
-                        Err(fees_only_tx.load_error)
-                    }
+                    Ok(ProcessedTransaction::FeesOnly(Box::new(fees_only_tx)))
+                } else {
+                    Err(fees_only_tx.load_error)
                 }
-                TransactionLoadResult::Loaded(loaded_transaction) => {
-                    let executed_tx = self.execute_loaded_transaction(
-                        callbacks,
-                        tx,
-                        loaded_transaction,
-                        &mut execute_timings,
-                        &mut error_metrics,
-                        &mut program_cache_for_tx_batch,
-                        environment,
-                        config,
-                    );
+            }
+            TransactionLoadResult::Loaded(loaded_transaction) => {
+                let execute_program_start = Instant::now();
+                let executed_tx = self.execute_loaded_transaction(
+                    callbacks,
+                    tx,
+                    loaded_transaction,
+                    &mut execute_timings,
+                    &mut error_metrics,
+                    &mut program_cache_for_tx_batch,
+                    environment,
+                    config,
+                );
+                println!("core - tx[{}] program execution took: {:?}", i, execute_program_start.elapsed());
 
-                    // Update loaded accounts cache with account states which might have changed.
-                    // Also update local program cache with modifications made by the transaction,
-                    // if it executed successfully.
-                    account_loader.update_accounts_for_executed_tx(tx, &executed_tx);
-                    if executed_tx.was_successful() {
-                        program_cache_for_tx_batch.merge(&executed_tx.programs_modified_by_tx);
-                    }
-
-                    Ok(ProcessedTransaction::Executed(Box::new(executed_tx)))
+                let update_start = Instant::now();
+                // Update loaded accounts cache with account states which might have changed.
+                // Also update local program cache with modifications made by the transaction,
+                // if it executed successfully.
+                account_loader.update_accounts_for_executed_tx(tx, &executed_tx);
+                if executed_tx.was_successful() {
+                    program_cache_for_tx_batch.merge(&executed_tx.programs_modified_by_tx);
                 }
-            });
+                println!("core - tx[{}] state update took: {:?}", i, update_start.elapsed());
+
+                Ok(ProcessedTransaction::Executed(Box::new(executed_tx)))
+            }
+        });
             execution_us = execution_us.saturating_add(single_execution_us);
+            println!("core - tx[{}] execution took: {:?}", i, execute_start.elapsed());
 
             processing_results.push(processing_result);
+            println!("core - tx[{}] total processing took: {:?}", i, tx_start.elapsed());
         }
+        println!("core - transaction processing loop took: {:?}", tx_loop_start.elapsed());
 
+        let cache_eviction_start = Instant::now();
         // Skip eviction when there's no chance this particular tx batch has increased the size of
         // ProgramCache entries. Note that loaded_missing is deliberately defined, so that there's
         // still at least one other batch, which will evict the program cache, even after the
@@ -485,9 +708,11 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
                     self.slot,
                 );
         }
+        println!("core - cache eviction took: {:?}", cache_eviction_start.elapsed());
 
-        debug!(
-            "load: {}us execute: {}us txs_len={}",
+        let metrics_update_start = Instant::now();
+        println!(
+            "core - load: {}us execute: {}us txs_len={}",
             load_us,
             execution_us,
             sanitized_txs.len(),
@@ -501,6 +726,9 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
             .saturating_add_in_place(ExecuteTimingType::ProgramCacheUs, program_cache_us);
         execute_timings.saturating_add_in_place(ExecuteTimingType::LoadUs, load_us);
         execute_timings.saturating_add_in_place(ExecuteTimingType::ExecuteUs, execution_us);
+        println!("core - metrics update took: {:?}", metrics_update_start.elapsed());
+
+        println!("core - total core processing time: {:?}", total_core_start.elapsed());
 
         LoadAndExecuteSanitizedTransactionsOutput {
             error_metrics,
@@ -906,7 +1134,191 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
 
     /// Execute a transaction using the provided loaded accounts and update
     /// the executors cache if the transaction was successful.
-    #[allow(clippy::too_many_arguments)]
+    // #[allow(clippy::too_many_arguments)]
+    // fn execute_loaded_transaction<CB: TransactionProcessingCallback>(
+    //     &self,
+    //     callback: &CB,
+    //     tx: &impl SVMTransaction,
+    //     mut loaded_transaction: LoadedTransaction,
+    //     execute_timings: &mut ExecuteTimings,
+    //     error_metrics: &mut TransactionErrorMetrics,
+    //     program_cache_for_tx_batch: &mut ProgramCacheForTxBatch,
+    //     environment: &TransactionProcessingEnvironment,
+    //     config: &TransactionProcessingConfig,
+    // ) -> ExecutedTransaction {
+    //     let transaction_accounts = std::mem::take(&mut loaded_transaction.accounts);
+    //
+    //     // Ensure the length of accounts matches the expected length from tx.account_keys().
+    //     // This is a sanity check in case that someone starts adding some additional accounts
+    //     // since this has been done before. See discussion in PR #4497 for details
+    //     debug_assert!(transaction_accounts.len() == tx.account_keys().len());
+    //
+    //     fn transaction_accounts_lamports_sum(
+    //         accounts: &[(Pubkey, AccountSharedData)],
+    //     ) -> Option<u128> {
+    //         accounts.iter().try_fold(0u128, |sum, (_, account)| {
+    //             sum.checked_add(u128::from(account.lamports()))
+    //         })
+    //     }
+    //
+    //     let default_rent_collector = RentCollector::default();
+    //     let rent_collector = environment
+    //         .rent_collector
+    //         .unwrap_or(&default_rent_collector);
+    //
+    //     let lamports_before_tx =
+    //         transaction_accounts_lamports_sum(&transaction_accounts).unwrap_or(0);
+    //
+    //     let compute_budget = config
+    //         .compute_budget
+    //         .unwrap_or_else(|| ComputeBudget::from(loaded_transaction.compute_budget_limits));
+    //
+    //     let mut transaction_context = TransactionContext::new(
+    //         transaction_accounts,
+    //         rent_collector.get_rent().clone(),
+    //         compute_budget.max_instruction_stack_depth,
+    //         compute_budget.max_instruction_trace_length,
+    //     );
+    //     transaction_context.set_remove_accounts_executable_flag_checks(
+    //         environment
+    //             .feature_set
+    //             .is_active(&remove_accounts_executable_flag_checks::id()),
+    //     );
+    //     #[cfg(debug_assertions)]
+    //     transaction_context.set_signature(tx.signature());
+    //
+    //     let pre_account_state_info =
+    //         TransactionAccountStateInfo::new(&transaction_context, tx, rent_collector);
+    //
+    //     let log_collector = if config.recording_config.enable_log_recording {
+    //         match config.log_messages_bytes_limit {
+    //             None => Some(LogCollector::new_ref()),
+    //             Some(log_messages_bytes_limit) => Some(LogCollector::new_ref_with_limit(Some(
+    //                 log_messages_bytes_limit,
+    //             ))),
+    //         }
+    //     } else {
+    //         None
+    //     };
+    //
+    //     let mut executed_units = 0u64;
+    //     let sysvar_cache = &self.sysvar_cache.read().unwrap();
+    //     let epoch_vote_account_stake_callback =
+    //         |pubkey| callback.get_current_epoch_vote_account_stake(pubkey);
+    //
+    //     let mut invoke_context = InvokeContext::new(
+    //         &mut transaction_context,
+    //         program_cache_for_tx_batch,
+    //         EnvironmentConfig::new(
+    //             environment.blockhash,
+    //             environment.blockhash_lamports_per_signature,
+    //             environment.epoch_total_stake,
+    //             &epoch_vote_account_stake_callback,
+    //             Arc::clone(&environment.feature_set),
+    //             sysvar_cache,
+    //         ),
+    //         log_collector.clone(),
+    //         compute_budget,
+    //     );
+    //
+    //     let mut process_message_time = Measure::start("process_message_time");
+    //     let process_result = process_message(
+    //         tx,
+    //         &loaded_transaction.program_indices,
+    //         &mut invoke_context,
+    //         execute_timings,
+    //         &mut executed_units,
+    //     );
+    //     process_message_time.stop();
+    //
+    //     drop(invoke_context);
+    //
+    //     execute_timings.execute_accessories.process_message_us += process_message_time.as_us();
+    //
+    //     let mut status = process_result
+    //         .and_then(|info| {
+    //             let post_account_state_info =
+    //                 TransactionAccountStateInfo::new(&transaction_context, tx, rent_collector);
+    //             TransactionAccountStateInfo::verify_changes(
+    //                 &pre_account_state_info,
+    //                 &post_account_state_info,
+    //                 &transaction_context,
+    //                 rent_collector,
+    //             )
+    //             .map(|_| info)
+    //         })
+    //         .map_err(|err| {
+    //             match err {
+    //                 TransactionError::InvalidRentPayingAccount
+    //                 | TransactionError::InsufficientFundsForRent { .. } => {
+    //                     error_metrics.invalid_rent_paying_account += 1;
+    //                 }
+    //                 TransactionError::InvalidAccountIndex => {
+    //                     error_metrics.invalid_account_index += 1;
+    //                 }
+    //                 _ => {
+    //                     error_metrics.instruction_error += 1;
+    //                 }
+    //             }
+    //             err
+    //         });
+    //
+    //     let log_messages: Option<TransactionLogMessages> =
+    //         log_collector.and_then(|log_collector| {
+    //             Rc::try_unwrap(log_collector)
+    //                 .map(|log_collector| log_collector.into_inner().into_messages())
+    //                 .ok()
+    //         });
+    //
+    //     let inner_instructions = if config.recording_config.enable_cpi_recording {
+    //         Some(Self::inner_instructions_list_from_instruction_trace(
+    //             &transaction_context,
+    //         ))
+    //     } else {
+    //         None
+    //     };
+    //
+    //     let ExecutionRecord {
+    //         accounts,
+    //         return_data,
+    //         touched_account_count,
+    //         accounts_resize_delta: accounts_data_len_delta,
+    //     } = transaction_context.into();
+    //
+    //     if status.is_ok()
+    //         && transaction_accounts_lamports_sum(&accounts)
+    //             .filter(|lamports_after_tx| lamports_before_tx == *lamports_after_tx)
+    //             .is_none()
+    //     {
+    //         status = Err(TransactionError::UnbalancedTransaction);
+    //     }
+    //     let status = status.map(|_| ());
+    //
+    //     loaded_transaction.accounts = accounts;
+    //     execute_timings.details.total_account_count += loaded_transaction.accounts.len() as u64;
+    //     execute_timings.details.changed_account_count += touched_account_count;
+    //
+    //     let return_data = if config.recording_config.enable_return_data_recording
+    //         && !return_data.data.is_empty()
+    //     {
+    //         Some(return_data)
+    //     } else {
+    //         None
+    //     };
+    //
+    //     ExecutedTransaction {
+    //         execution_details: TransactionExecutionDetails {
+    //             status,
+    //             log_messages,
+    //             inner_instructions,
+    //             return_data,
+    //             executed_units,
+    //             accounts_data_len_delta,
+    //         },
+    //         loaded_transaction,
+    //         programs_modified_by_tx: program_cache_for_tx_batch.drain_modified_entries(),
+    //     }
+    // }
     fn execute_loaded_transaction<CB: TransactionProcessingCallback>(
         &self,
         callback: &CB,
@@ -918,12 +1330,18 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
         environment: &TransactionProcessingEnvironment,
         config: &TransactionProcessingConfig,
     ) -> ExecutedTransaction {
+        use std::time::Instant;
+        let total_execute_start = Instant::now();
+        println!("execute_loaded_transaction - starting execution");
+
+        let transaction_accounts_start = Instant::now();
         let transaction_accounts = std::mem::take(&mut loaded_transaction.accounts);
 
         // Ensure the length of accounts matches the expected length from tx.account_keys().
         // This is a sanity check in case that someone starts adding some additional accounts
         // since this has been done before. See discussion in PR #4497 for details
         debug_assert!(transaction_accounts.len() == tx.account_keys().len());
+        println!("execute_loaded_transaction - accounts setup took: {:?}", transaction_accounts_start.elapsed());
 
         fn transaction_accounts_lamports_sum(
             accounts: &[(Pubkey, AccountSharedData)],
@@ -933,6 +1351,7 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
             })
         }
 
+        let rent_start = Instant::now();
         let default_rent_collector = RentCollector::default();
         let rent_collector = environment
             .rent_collector
@@ -940,11 +1359,15 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
 
         let lamports_before_tx =
             transaction_accounts_lamports_sum(&transaction_accounts).unwrap_or(0);
+        println!("execute_loaded_transaction - rent and lamports calculation took: {:?}", rent_start.elapsed());
 
+        let compute_budget_start = Instant::now();
         let compute_budget = config
             .compute_budget
             .unwrap_or_else(|| ComputeBudget::from(loaded_transaction.compute_budget_limits));
+        println!("execute_loaded_transaction - compute budget setup took: {:?}", compute_budget_start.elapsed());
 
+        let transaction_context_start = Instant::now();
         let mut transaction_context = TransactionContext::new(
             transaction_accounts,
             rent_collector.get_rent().clone(),
@@ -958,10 +1381,14 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
         );
         #[cfg(debug_assertions)]
         transaction_context.set_signature(tx.signature());
+        println!("execute_loaded_transaction - transaction context setup took: {:?}", transaction_context_start.elapsed());
 
+        let pre_state_start = Instant::now();
         let pre_account_state_info =
             TransactionAccountStateInfo::new(&transaction_context, tx, rent_collector);
+        println!("execute_loaded_transaction - pre-state info calculation took: {:?}", pre_state_start.elapsed());
 
+        let log_collector_start = Instant::now();
         let log_collector = if config.recording_config.enable_log_recording {
             match config.log_messages_bytes_limit {
                 None => Some(LogCollector::new_ref()),
@@ -972,12 +1399,14 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
         } else {
             None
         };
+        println!("execute_loaded_transaction - log collector setup took: {:?}", log_collector_start.elapsed());
 
         let mut executed_units = 0u64;
         let sysvar_cache = &self.sysvar_cache.read().unwrap();
         let epoch_vote_account_stake_callback =
             |pubkey| callback.get_current_epoch_vote_account_stake(pubkey);
 
+        let invoke_context_start = Instant::now();
         let mut invoke_context = InvokeContext::new(
             &mut transaction_context,
             program_cache_for_tx_batch,
@@ -992,7 +1421,10 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
             log_collector.clone(),
             compute_budget,
         );
+        println!("execute_loaded_transaction - invoke context setup took: {:?}", invoke_context_start.elapsed());
 
+        println!("execute_loaded_transaction - starting process_message - CORE EXECUTION");
+        let process_message_start = Instant::now();
         let mut process_message_time = Measure::start("process_message_time");
         let process_result = process_message(
             tx,
@@ -1002,11 +1434,15 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
             &mut executed_units,
         );
         process_message_time.stop();
+        println!("execute_loaded_transaction - process_message took: {:?}", process_message_start.elapsed());
 
+        let cleanup_start = Instant::now();
         drop(invoke_context);
 
         execute_timings.execute_accessories.process_message_us += process_message_time.as_us();
+        println!("execute_loaded_transaction - context cleanup took: {:?}", cleanup_start.elapsed());
 
+        let verify_start = Instant::now();
         let mut status = process_result
             .and_then(|info| {
                 let post_account_state_info =
@@ -1017,7 +1453,7 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
                     &transaction_context,
                     rent_collector,
                 )
-                .map(|_| info)
+                    .map(|_| info)
             })
             .map_err(|err| {
                 match err {
@@ -1034,7 +1470,9 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
                 }
                 err
             });
+        println!("execute_loaded_transaction - result verification took: {:?}", verify_start.elapsed());
 
+        let log_processing_start = Instant::now();
         let log_messages: Option<TransactionLogMessages> =
             log_collector.and_then(|log_collector| {
                 Rc::try_unwrap(log_collector)
@@ -1049,7 +1487,9 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
         } else {
             None
         };
+        println!("execute_loaded_transaction - log and instruction processing took: {:?}", log_processing_start.elapsed());
 
+        let finalization_start = Instant::now();
         let ExecutionRecord {
             accounts,
             return_data,
@@ -1059,8 +1499,8 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
 
         if status.is_ok()
             && transaction_accounts_lamports_sum(&accounts)
-                .filter(|lamports_after_tx| lamports_before_tx == *lamports_after_tx)
-                .is_none()
+            .filter(|lamports_after_tx| lamports_before_tx == *lamports_after_tx)
+            .is_none()
         {
             status = Err(TransactionError::UnbalancedTransaction);
         }
@@ -1077,6 +1517,8 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
         } else {
             None
         };
+        println!("execute_loaded_transaction - finalization took: {:?}", finalization_start.elapsed());
+        println!("execute_loaded_transaction - total execution time: {:?}", total_execute_start.elapsed());
 
         ExecutedTransaction {
             execution_details: TransactionExecutionDetails {
