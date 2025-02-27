@@ -1123,9 +1123,9 @@ fn encode_account<T: ReadableAccount>(
 ) -> Result<UiAccount> {
     if (encoding == UiAccountEncoding::Binary || encoding == UiAccountEncoding::Base58)
         && data_slice
-            .map(|s| min(s.length, account.data().len().saturating_sub(s.offset)))
-            .unwrap_or(account.data().len())
-            > MAX_BASE58_BYTES
+        .map(|s| min(s.length, account.data().len().saturating_sub(s.offset)))
+        .unwrap_or(account.data().len())
+        > MAX_BASE58_BYTES
     {
         let message = format!("Encoded binary (base 58) data should be less than {MAX_BASE58_BYTES} bytes, please use Base64 encoding.");
         Err(error::Error {
@@ -1152,7 +1152,7 @@ fn sanitize_transaction(
         address_loader,
         reserved_account_keys,
     )
-    .map_err(|err| Error::invalid_params(format!("invalid transaction: {err}")))
+        .map_err(|err| Error::invalid_params(format!("invalid transaction: {err}")))
 }
 
 // #[cfg(test)]
@@ -1417,7 +1417,7 @@ pub fn run_transaction_simulation() -> bool {
             .unwrap();
         let player = Keypair::from_bytes(&player_keypair_bytes).unwrap();
 
-        let program_id = Pubkey::from_str("4SxzrZndMnznt1qsY6ycFCXjygRfeX4dpLF2R8tz5FfD").unwrap();
+        let program_id = Pubkey::from_str("9icUdyHNJLiBjAD57sVEDcod7exWh2mwFGVYtL5Yb6Va").unwrap();
 
         // let greeting_seed = "hello";
         // let greeting_pubkey = Pubkey::create_with_seed(
@@ -1426,7 +1426,7 @@ pub fn run_transaction_simulation() -> bool {
         //     &program_id,
         // ).unwrap();
 
-        let greeting_pubkey = Pubkey::from_str("9icUdyHNJLiBjAD57sVEDcod7exWh2mwFGVYtL5Yb6Va").unwrap();
+        let greeting_pubkey = Pubkey::from_str("qpTWpLBhVs4N8odNY21sK2JBVGtgRxSsQFpTk9tR6Dr").unwrap();
 
         let data = [1u8];
         let instruction = Instruction::new_with_bytes(
