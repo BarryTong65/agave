@@ -586,10 +586,34 @@ impl<'a> InvokeContext<'a> {
         );
         println!("process_executable_chain - VM setup took: {:?}", vm_setup_start.elapsed());
 
-        let execution_start = Instant::now();
-        println!("process_executable_chain - invoking function");
-        vm.invoke_function(function);
-        println!("process_executable_chain - function execution took: {:?}", execution_start.elapsed());
+        // Execute the function 100 times and record timing for each execution
+        let mut execution_times = Vec::with_capacity(100);
+        println!("process_executable_chain - beginning 100 function invocations");
+
+        for i in 0..100 {
+            let execution_start = Instant::now();
+            println!("process_executable_chain - invoking function (iteration {})", i + 1);
+            vm.invoke_function(function);
+            let execution_time = execution_start.elapsed();
+            execution_times.push(execution_time);
+            println!("process_executable_chain - function execution {} took: {:?}", i + 1, execution_time);
+        }
+
+        // Calculate and print statistics
+        if !execution_times.is_empty() {
+            let total_execution_time: std::time::Duration = execution_times.iter().sum();
+            let avg_execution_time = total_execution_time / execution_times.len() as u32;
+
+            // Find min and max execution times
+            let min_time = execution_times.iter().min().unwrap();
+            let max_time = execution_times.iter().max().unwrap();
+
+            println!("process_executable_chain - execution statistics:");
+            println!("  Total execution time for 100 invocations: {:?}", total_execution_time);
+            println!("  Average execution time: {:?}", avg_execution_time);
+            println!("  Minimum execution time: {:?}", min_time);
+            println!("  Maximum execution time: {:?}", max_time);
+        }
 
         let result_processing_start = Instant::now();
         let result = match vm.program_result {
