@@ -1558,16 +1558,27 @@ fn execute<'a, 'b: 'a>(
     executable: &'a Executable<InvokeContext<'static>>,
     invoke_context: &'a mut InvokeContext<'b>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    use std::time::Instant;
+    let total_execute_start = Instant::now();
+    println!("bpf_loader_execute - starting execution");
+
     // We dropped the lifetime tracking in the Executor by setting it to 'static,
     // thus we need to reintroduce the correct lifetime of InvokeContext here again.
+    let transmute_start = Instant::now();
     let executable = unsafe {
         mem::transmute::<&'a Executable<InvokeContext<'static>>, &'a Executable<InvokeContext<'b>>>(
             executable,
         )
     };
+    println!("bpf_loader_execute - transmute took: {:?}", transmute_start.elapsed());
+
+    let context_setup_start = Instant::now();
     let log_collector = invoke_context.get_log_collector();
     let transaction_context = &invoke_context.transaction_context;
     let instruction_context = transaction_context.get_current_instruction_context()?;
+    println!("bpf_loader_execute - context setup took: {:?}", context_setup_start.elapsed());
+
+    let program_id_start = Instant::now();
     let (program_id, is_loader_deprecated) = {
         let program_account =
             instruction_context.try_borrow_last_program_account(transaction_context)?;
@@ -1576,24 +1587,34 @@ fn execute<'a, 'b: 'a>(
             *program_account.get_owner() == bpf_loader_deprecated::id(),
         )
     };
+    println!("bpf_loader_execute - program ID resolution took: {:?}", program_id_start.elapsed());
+
+    let jit_setup_start = Instant::now();
     #[cfg(any(target_os = "windows", not(target_arch = "x86_64")))]
     let use_jit = true;
     #[cfg(all(not(target_os = "windows"), target_arch = "x86_64"))]
     let use_jit = executable.get_compiled_program().is_some();
+    println!("bpf_loader_execute - use_jit initialized to: {}", use_jit);
+
     let direct_mapping = invoke_context
         .get_feature_set()
         .is_active(&bpf_account_data_direct_mapping::id());
+    println!("bpf_loader_execute - JIT/feature setup took: {:?}", jit_setup_start.elapsed());
 
     let mut serialize_time = Measure::start("serialize");
+    println!("bpf_loader_execute - starting parameter serialization");
+    let serialize_start = Instant::now();
     let (parameter_bytes, regions, accounts_metadata) = serialization::serialize_parameters(
         invoke_context.transaction_context,
         instruction_context,
         !direct_mapping,
     )?;
     serialize_time.stop();
+    println!("bpf_loader_execute - parameter serialization took: {:?}", serialize_start.elapsed());
 
     // save the account addresses so in case we hit an AccessViolation error we
     // can map to a more specific error
+    let account_addr_start = Instant::now();
     let account_region_addrs = accounts_metadata
         .iter()
         .map(|m| {
@@ -1608,22 +1629,38 @@ fn execute<'a, 'b: 'a>(
             m.vm_data_addr..vm_end
         })
         .collect::<Vec<_>>();
+    println!("bpf_loader_execute - account region address mapping took: {:?}", account_addr_start.elapsed());
 
     let mut create_vm_time = Measure::start("create_vm");
+    println!("bpf_loader_execute - starting VM creation");
+    let vm_start = Instant::now();
     let execution_result = {
         let compute_meter_prev = invoke_context.get_remaining();
+        println!("bpf_loader_execute - before VM creation, use_jit value: {}", use_jit);
         create_vm!(vm, executable, regions, accounts_metadata, invoke_context);
+        let create_vm_took = vm_start.elapsed();
+        println!("bpf_loader_execute - VM creation took: {:?}", create_vm_took);
+
+        let vm_setup_start = Instant::now();
         let (mut vm, stack, heap) = match vm {
             Ok(info) => info,
             Err(e) => {
                 ic_logger_msg!(log_collector, "Failed to create SBF VM: {}", e);
+                println!("bpf_loader_execute - VM creation failed: {}", e);
                 return Err(Box::new(InstructionError::ProgramEnvironmentSetupFailure));
             }
         };
         create_vm_time.stop();
+        println!("bpf_loader_execute - VM setup took: {:?}", vm_setup_start.elapsed());
 
+        let execution_start = Instant::now();
         vm.context_object_pointer.execute_time = Some(Measure::start("execute"));
+        println!("bpf_loader_execute - executing program, use_jit value: {}", use_jit);
         let (compute_units_consumed, result) = vm.execute_program(executable, !use_jit);
+        let execution_took = execution_start.elapsed();
+        println!("bpf_loader_execute - program execution took: {:?}", execution_took);
+
+        let cleanup_start = Instant::now();
         MEMORY_POOL.with_borrow_mut(|memory_pool| {
             memory_pool.put_stack(stack);
             memory_pool.put_heap(heap);
@@ -1635,7 +1672,9 @@ fn execute<'a, 'b: 'a>(
             execute_time.stop();
             invoke_context.timings.execute_us += execute_time.as_us();
         }
+        println!("bpf_loader_execute - VM cleanup took: {:?}", cleanup_start.elapsed());
 
+        let logging_start = Instant::now();
         ic_logger_msg!(
             log_collector,
             "Program {} consumed {} of {} compute units",
@@ -1648,12 +1687,17 @@ fn execute<'a, 'b: 'a>(
         if !return_data.is_empty() {
             stable_log::program_return(&log_collector, &program_id, return_data);
         }
-        match result {
+        println!("bpf_loader_execute - logging took: {:?}", logging_start.elapsed());
+
+        let result_processing_start = Instant::now();
+        let result = match result {
             ProgramResult::Ok(status) if status != SUCCESS => {
+                println!("bpf_loader_execute - program returned error status: {:?}", status);
                 let error: InstructionError = status.into();
                 Err(Box::new(error) as Box<dyn std::error::Error>)
             }
             ProgramResult::Err(mut error) => {
+                println!("bpf_loader_execute - program execution failed: {:?}", error);
                 if invoke_context
                     .get_feature_set()
                     .is_active(&solana_feature_set::deplete_cu_meter_on_vm_failure::id())
@@ -1720,8 +1764,13 @@ fn execute<'a, 'b: 'a>(
                     error.into()
                 })
             }
-            _ => Ok(()),
-        }
+            _ => {
+                println!("bpf_loader_execute - program executed successfully");
+                Ok(())
+            }
+        };
+        println!("bpf_loader_execute - result processing took: {:?}", result_processing_start.elapsed());
+        result
     };
 
     fn deserialize_parameters(
@@ -1741,17 +1790,23 @@ fn execute<'a, 'b: 'a>(
     }
 
     let mut deserialize_time = Measure::start("deserialize");
+    println!("bpf_loader_execute - starting parameter deserialization");
+    let deserialize_start = Instant::now();
     let execute_or_deserialize_result = execution_result.and_then(|_| {
         deserialize_parameters(invoke_context, parameter_bytes.as_slice(), !direct_mapping)
             .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)
     });
     deserialize_time.stop();
+    println!("bpf_loader_execute - parameter deserialization took: {:?}", deserialize_start.elapsed());
 
     // Update the timings
+    let timing_update_start = Instant::now();
     invoke_context.timings.serialize_us += serialize_time.as_us();
     invoke_context.timings.create_vm_us += create_vm_time.as_us();
     invoke_context.timings.deserialize_us += deserialize_time.as_us();
+    println!("bpf_loader_execute - timing update took: {:?}", timing_update_start.elapsed());
 
+    println!("bpf_loader_execute - total execution time: {:?}", total_execute_start.elapsed());
     execute_or_deserialize_result
 }
 
