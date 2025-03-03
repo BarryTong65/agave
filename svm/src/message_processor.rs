@@ -124,7 +124,7 @@ pub(crate) fn process_message(
 
     debug_assert_eq!(program_indices.len(), message.num_instructions());
 
-    let instructions_setup_start = Instant::now();
+    // let instructions_setup_start = Instant::now();
     for (instruction_index, ((program_id, instruction), program_indices)) in message
         .program_instructions_iter()
         .zip(program_indices.iter())
