@@ -1577,7 +1577,7 @@ fn execute<'a, 'b: 'a>(
         )
     };
     #[cfg(any(target_os = "windows", not(target_arch = "x86_64")))]
-    let use_jit = false;
+    let use_jit = true;
     #[cfg(all(not(target_os = "windows"), target_arch = "x86_64"))]
     let use_jit = executable.get_compiled_program().is_some();
     let direct_mapping = invoke_context
