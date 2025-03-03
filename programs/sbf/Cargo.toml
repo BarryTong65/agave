@@ -250,5 +250,4 @@ members = [
 # and the overrides in sync.
 solana-curve25519 = { path = "../../curves/curve25519" }
 solana-zk-sdk = { path = "../../zk-sdk" }
-librocksdb-sys = { git = "https://github.com/hdevalence/rust-rocksdb", branch = "master" }
 
