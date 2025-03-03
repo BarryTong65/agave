@@ -85,3 +85,5 @@ fn test_no_panic_rpc_client() {
         .send_and_confirm_transaction(&transaction)
         .unwrap();
 }
+
+
