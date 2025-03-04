@@ -90,13 +90,7 @@ macro_rules! with_mock_invoke_context {
 #[test]
 fn test_instruction_count_tuner() {
     println!("Program test_instruction_count_tuner");
-    let program_path = PathBuf::from("tests/program.so");
-    let mut file = File::open(&program_path).unwrap_or_else(|err| {
-        panic!("Failed to open {}: {}", program_path.display(), err);
-    });
-
-    let mut elf = Vec::new();
-    file.read_to_end(&mut elf).unwrap();
+    let elf = load_program_from_file("tuner");
     println!("Program read_to_end");
     with_mock_invoke_context!(invoke_context, bpf_loader::id(), 10000001);
     const BUDGET: u64 = 200_000;
