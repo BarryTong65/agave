@@ -6,6 +6,9 @@
     allow(dead_code, unused_imports)
 )]
 
+use std::fs::File;
+use std::io::Read;
+use std::path::PathBuf;
 use {
     solana_feature_set::bpf_account_data_direct_mapping, solana_sbpf::memory_region::MemoryState,
     solana_sdk::signer::keypair::Keypair, std::slice,
@@ -86,7 +89,12 @@ macro_rules! with_mock_invoke_context {
 
 #[test]
 fn test_instruction_count_tuner() {
-    let elf = load_program_from_file("tuner");
+    let program_path = PathBuf::from("program.so");
+    let mut file = File::open(&program_path).unwrap_or_else(|err| {
+        panic!("Failed to open {}: {}", program_path.display(), err);
+    });
+    let mut elf = Vec::new();
+    file.read_to_end(&mut elf).unwrap();
     with_mock_invoke_context!(invoke_context, bpf_loader::id(), 10000001);
     const BUDGET: u64 = 200_000;
     invoke_context.mock_set_remaining(BUDGET);
