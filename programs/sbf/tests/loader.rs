@@ -123,7 +123,7 @@ fn clone_regions(regions: &[MemoryRegion]) -> Vec<MemoryRegion> {
 
 #[test]
 fn test_create_vm() {
-    let elf = load_program_from_file("tuna");
+    let elf = load_program_from_file("tuner");
     with_mock_invoke_context!(invoke_context, bpf_loader::id(), 10000001);
     const BUDGET: u64 = 200_000;
     invoke_context.mock_set_remaining(BUDGET);
