@@ -25,33 +25,23 @@ use {
 
 const CHUNK_SIZE: usize = 512; // Size of chunk just needs to fit into tx
 
-pub fn load_program_from_file(name: &str) -> Vec<u8> {
-    let mut pathbuf = {
-        let current_exe = env::current_exe().unwrap();
-        PathBuf::from(
-            current_exe
-                .parent()
-                .unwrap()
-                .parent()
-                .unwrap()
-                .parent()
-                .unwrap(),
-        )
-    };
-    pathbuf.push("sbpf-solana-solana");
-    pathbuf.push("release");
-    pathbuf.push(name);
-    pathbuf.set_extension("so");
-    let mut file = File::open(&pathbuf).unwrap_or_else(|err| {
-        panic!("Failed to open {}: {}", pathbuf.display(), err);
-    });
-    let mut program = Vec::new();
-    file.read_to_end(&mut program).unwrap();
-    program
-}
 // pub fn load_program_from_file(name: &str) -> Vec<u8> {
-//     let pathbuf = PathBuf::from("/Users/barry/binance/agave/programs/sbf/src/program.so");
-//
+//     let mut pathbuf = {
+//         let current_exe = env::current_exe().unwrap();
+//         PathBuf::from(
+//             current_exe
+//                 .parent()
+//                 .unwrap()
+//                 .parent()
+//                 .unwrap()
+//                 .parent()
+//                 .unwrap(),
+//         )
+//     };
+//     pathbuf.push("sbpf-solana-solana");
+//     pathbuf.push("release");
+//     pathbuf.push(name);
+//     pathbuf.set_extension("so");
 //     let mut file = File::open(&pathbuf).unwrap_or_else(|err| {
 //         panic!("Failed to open {}: {}", pathbuf.display(), err);
 //     });
@@ -59,6 +49,16 @@ pub fn load_program_from_file(name: &str) -> Vec<u8> {
 //     file.read_to_end(&mut program).unwrap();
 //     program
 // }
+pub fn load_program_from_file(name: &str) -> Vec<u8> {
+    let pathbuf = PathBuf::from("/Users/barry/binance/agave/programs/sbf/src/program.so");
+
+    let mut file = File::open(&pathbuf).unwrap_or_else(|err| {
+        panic!("Failed to open {}: {}", pathbuf.display(), err);
+    });
+    let mut program = Vec::new();
+    file.read_to_end(&mut program).unwrap();
+    program
+}
 
 
 
