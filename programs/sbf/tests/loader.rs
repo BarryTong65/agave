@@ -199,8 +199,8 @@ fn test_instruction_count_tuner() {
     let executable =
         Executable::<InvokeContext>::from_elf(&elf, Arc::new(program_runtime_environment.unwrap()))
             .unwrap();
-    let loader = solana_type_overrides::sync::Arc::new(BuiltinProgram::new_mock());
-    let function_registry = solana_sbpf::program::FunctionRegistry::default();
+    // let loader = solana_type_overrides::sync::Arc::new(BuiltinProgram::new_mock());
+    // let function_registry = solana_sbpf::program::FunctionRegistry::default();
     // let executable = solana_sbpf::elf::Executable::<InvokeContext>::from_text_bytes(
     //     &[0x9D, 0, 0, 0, 0, 0, 0, 0],
     //     loader,
