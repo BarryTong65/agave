@@ -117,12 +117,12 @@ fn test_instruction_count_tuner() {
     )
         .unwrap();
 
-    // let program_runtime_environment = create_program_runtime_environment_v1(
-    //     invoke_context.get_feature_set(),
-    //     &ComputeBudget::default(),
-    //     true,
-    //     false,
-    // );
+    let program_runtime_environment = create_program_runtime_environment_v1(
+        invoke_context.get_feature_set(),
+        &ComputeBudget::default(),
+        true,
+        false,
+    );
     // let executable =
     //     Executable::<InvokeContext>::from_elf(&elf, Arc::new(program_runtime_environment.unwrap()))
     //         .unwrap();
