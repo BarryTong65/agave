@@ -169,7 +169,7 @@ fn test_create_vm() {
 #[test]
 fn test_instruction_count_tuner() {
     println!("Program test_instruction_count_tuner");
-    let elf = load_program_from_file("tuner");
+    // let elf = load_program_from_file("tuner");
     println!("Program read_to_end");
     with_mock_invoke_context!(invoke_context, bpf_loader::id(), 10000001);
     const BUDGET: u64 = 900_000;
