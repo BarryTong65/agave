@@ -9,6 +9,7 @@
 use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
+use solana_sbpf::program::{BuiltinProgram, SBPFVersion};
 use {
     solana_feature_set::bpf_account_data_direct_mapping, solana_sbpf::memory_region::MemoryState,
     solana_sdk::signer::keypair::Keypair, std::slice,
@@ -195,9 +196,18 @@ fn test_instruction_count_tuner() {
         true,
         false,
     );
-    let executable =
-        Executable::<InvokeContext>::from_elf(&elf, Arc::new(program_runtime_environment.unwrap()))
-            .unwrap();
+    // let executable =
+    //     Executable::<InvokeContext>::from_elf(&elf, Arc::new(program_runtime_environment.unwrap()))
+    //         .unwrap();
+    let loader = solana_type_overrides::sync::Arc::new(BuiltinProgram::new_mock());
+    let function_registry = solana_sbpf::program::FunctionRegistry::default();
+    let executable = solana_sbpf::elf::Executable::<InvokeContext>::from_text_bytes(
+        &[0x9D, 0, 0, 0, 0, 0, 0, 0],
+        loader,
+        SBPFVersion::V3,
+        function_registry,
+    )
+    .unwrap();
 
     executable.verify::<RequisiteVerifier>().unwrap();
 
@@ -212,10 +222,10 @@ fn test_instruction_count_tuner() {
 
     println!("create_vm");
 
-    // let mut measure = Measure::start("tune");
-    // let (instructions, _result) = vm.execute_program(&executable, true);
-    // println!("Program executed with result: {:?}", _result);
-    // measure.stop();
+    let mut measure = Measure::start("tune");
+    let (instructions, _result) = vm.execute_program(&executable, true);
+    println!("Program executed with result: {:?}", _result);
+    measure.stop();
 
     // assert_eq!(
     //     0,
