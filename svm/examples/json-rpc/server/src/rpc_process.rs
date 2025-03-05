@@ -268,114 +268,6 @@ impl JsonRpcRequestProcessor {
         0u64
     }
 
-    // fn simulate_transaction_unchecked(
-    //     &self,
-    //     transaction: &SanitizedTransaction,
-    //     enable_cpi_recording: bool,
-    // ) -> TransactionSimulationResult {
-    //     let mut mock_bank = MockBankCallback::new(self.account_map.clone());
-    //     let transaction_processor = self.transaction_processor.read().unwrap();
-    //
-    //     let account_keys = transaction.message().account_keys();
-    //     let number_of_accounts = account_keys.len();
-    //     let account_overrides = AccountOverrides::default();
-    //
-    //     let fork_graph = Arc::new(RwLock::new(MockForkGraph {}));
-    //
-    //     create_executable_environment(
-    //         fork_graph.clone(),
-    //         &account_keys,
-    //         &mut mock_bank,
-    //         &transaction_processor,
-    //     );
-    //
-    //     // Add the system program builtin.
-    //     transaction_processor.add_builtin(
-    //         &mock_bank,
-    //         solana_system_program::id(),
-    //         "system_program",
-    //         ProgramCacheEntry::new_builtin(
-    //             0,
-    //             b"system_program".len(),
-    //             system_processor::Entrypoint::vm,
-    //         ),
-    //     );
-    //     // Add the BPF Loader v2 builtin, for the SPL Token program.
-    //     transaction_processor.add_builtin(
-    //         &mock_bank,
-    //         solana_sdk::bpf_loader_upgradeable::id(),
-    //         "solana_bpf_loader_upgradeable_program",
-    //         ProgramCacheEntry::new_builtin(
-    //             0,
-    //             b"solana_bpf_loader_upgradeable_program".len(),
-    //             solana_bpf_loader_program::Entrypoint::vm,
-    //         ),
-    //     );
-    //
-    //     let batch = self.prepare_unlocked_batch_from_single_tx(transaction);
-    //     let LoadAndExecuteTransactionsOutput {
-    //         mut processing_results,
-    //         ..
-    //     } = self.load_and_execute_transactions(
-    //         &mock_bank,
-    //         &batch,
-    //         // After simulation, transactions will need to be forwarded to the leader
-    //         // for processing. During forwarding, the transaction could expire if the
-    //         // delay is not accounted for.
-    //         MAX_PROCESSING_AGE - MAX_TRANSACTION_FORWARDING_DELAY,
-    //         TransactionProcessingConfig {
-    //             account_overrides: Some(&account_overrides),
-    //             check_program_modification_slot: false,
-    //             compute_budget: Some(ComputeBudget::default()),
-    //             log_messages_bytes_limit: None,
-    //             limit_to_load_programs: true,
-    //             recording_config: ExecutionRecordingConfig {
-    //                 enable_cpi_recording,
-    //                 enable_log_recording: true,
-    //                 enable_return_data_recording: true,
-    //             },
-    //             transaction_account_lock_limit: Some(64),
-    //         },
-    //     );
-    //
-    //     let processing_result = processing_results
-    //         .pop()
-    //         .unwrap_or(Err(TransactionError::InvalidProgramForExecution));
-    //     let flattened_result = processing_result.flattened_result();
-    //     let (post_simulation_accounts, logs, return_data, inner_instructions) =
-    //         match processing_result {
-    //             Ok(processed_tx) => match processed_tx {
-    //                 ProcessedTransaction::Executed(executed_tx) => {
-    //                     let details = executed_tx.execution_details;
-    //                     let post_simulation_accounts = executed_tx
-    //                         .loaded_transaction
-    //                         .accounts
-    //                         .into_iter()
-    //                         .take(number_of_accounts)
-    //                         .collect::<Vec<_>>();
-    //                     (
-    //                         post_simulation_accounts,
-    //                         details.log_messages,
-    //                         details.return_data,
-    //                         details.inner_instructions,
-    //                     )
-    //                 }
-    //                 ProcessedTransaction::FeesOnly(_) => (vec![], None, None, None),
-    //             },
-    //             Err(_) => (vec![], None, None, None),
-    //         };
-    //     let logs = logs.unwrap_or_default();
-    //     let units_consumed: u64 = 0;
-    //
-    //     TransactionSimulationResult {
-    //         result: flattened_result,
-    //         logs,
-    //         post_simulation_accounts,
-    //         units_consumed,
-    //         return_data,
-    //         inner_instructions,
-    //     }
-    // }
     fn simulate_transaction_unchecked(
         &self,
         transaction: &SanitizedTransaction,
@@ -434,6 +326,20 @@ impl JsonRpcRequestProcessor {
                 solana_bpf_loader_program::Entrypoint::vm,
             ),
         );
+
+        // Add the BPF Loader v2 builtin, for the SPL Token program.
+        transaction_processor.add_builtin(
+            &mock_bank,
+            solana_sdk::bpf_loader::id(),
+            "solana_bpf_loader_program",
+            ProgramCacheEntry::new_builtin(
+                0,
+                b"solana_bpf_loader_program".len(),
+                solana_bpf_loader_program::Entrypoint::vm,
+            ),
+        );
+
+        transaction_processor.fill_missing_sysvar_cache_entries(&mock_bank);
         println!("simulation - adding builtin programs took: {:?}", builtin_start.elapsed());
 
         // 准备批处理
@@ -1260,6 +1166,7 @@ fn verify_pubkey(input: &str) -> Result<Pubkey> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Read;
     use spl_token_2022::solana_program::bpf_loader_upgradeable;
     use {
         super::*,
@@ -1270,14 +1177,11 @@ mod tests {
             signature::{Keypair, Signer},
             transaction::Transaction,
         },
-        std::{str::FromStr, fs, path::PathBuf, time::Instant},
+        std::{str::FromStr, fs, path::PathBuf},
     };
 
     fn create_test_processor() -> JsonRpcRequestProcessor {
-        let start = Instant::now();
-
-        let accounts_path = PathBuf::from("/home/barry.t/binance/agave/svm/examples/json-rpc/program/accounts-bak.json");
-        //let accounts_path = PathBuf::from("/Users/barry/binance/agave/svm/examples/json-rpc/program/accounts-bak.json");
+        let accounts_path = PathBuf::from("/Users/barry/binance/agave/svm/examples/json-rpc/program/accounts-ray.json");
         let ledger_path = PathBuf::from("");
 
         let config = JsonRpcConfig {
@@ -1287,70 +1191,94 @@ mod tests {
             rpc_niceness_adj: 0,
             max_request_body_size: Some(MAX_REQUEST_BODY_SIZE),
         };
-        println!("Config setup took: {:?}", start.elapsed());
 
-        let exit_start = Instant::now();
         let exit = create_exit(Arc::new(AtomicBool::new(false)));
-        println!("Exit creation took: {:?}", exit_start.elapsed());
-
-        let processor_start = Instant::now();
-        let processor = JsonRpcRequestProcessor::new(config, exit);
-        println!("Processor initialization took: {:?}", processor_start.elapsed());
-
-        processor
+        JsonRpcRequestProcessor::new(config, exit)
     }
 
     #[test]
     fn test_simulate_transaction() {
-        let total_start = Instant::now();
-
-        let processor_setup_start = Instant::now();
         let processor = create_test_processor();
-        println!("Processor setup total: {:?}", processor_setup_start.elapsed());
 
         // Create player from base58 private key
-        let keypair_start = Instant::now();
-        let player_keypair_str = "4Z4niS25RQqJrMwAZTSChhDmMQhQc6CQLD2yAzuwp3hWJKN2kdmEdJimMiBqLoiUt3BuVPbV735wJyREA4Fr8NiL";
+        let player_keypair_str = "x";
         let player_keypair_bytes = bs58::decode(player_keypair_str)
             .into_vec()
             .unwrap();
         let player = Keypair::from_bytes(&player_keypair_bytes).unwrap();
-        println!("Key pair creation took: {:?}", keypair_start.elapsed());
-
-        let pubkey_start = Instant::now();
-        let program_id = Pubkey::from_str("9icUdyHNJLiBjAD57sVEDcod7exWh2mwFGVYtL5Yb6Va").unwrap();
-
-        // let greeting_seed = "hello";
-        // let greeting_pubkey = Pubkey::create_with_seed(
-        //     &player.pubkey(),
-        //     greeting_seed,
-        //     &program_id,
-        // ).unwrap();
-
-        let greeting_pubkey = Pubkey::from_str("9icUdyHNJLiBjAD57sVEDcod7exWh2mwFGVYtL5Yb6Va").unwrap();
 
         // Create instruction data
-        let instruction_start = Instant::now();
-        let data = [1u8];
-        let instruction = Instruction::new_with_bytes(
-            program_id,
-            &data,
-            vec![AccountMeta::new(greeting_pubkey, false)],
+        let instruction1_data = bs58::decode("3ipZX7g9NBXycb5v9QjqWwuhh8PxV9WL3HbJRPdURtmm5W1r5t7QtWMbGWB7mQgB8itRgPTMomJoFW7k4WhmYdYLDyWW5WMHN9M2TPGB2xFoTt3tkD87ECGUXNUzp7WskoNcjTtM9nVZMxZDcAGN1GAD82P9vhnSsQKiE5Kh2").into_vec().unwrap();
+        let instruction1 = Instruction::new_with_bytes(
+            Pubkey::from_str("11111111111111111111111111111111").unwrap(),
+            &instruction1_data,
+            vec![
+                AccountMeta::new(Pubkey::from_str("H7GCUaJMUgdQiNYyoQTTmwG4fSYMV8W8ECmATZ2kyNTJ").unwrap(), true),
+                AccountMeta::new(Pubkey::from_str("JBxmvDYWetwnND8z1ppEuVWpXjpds77J2DgR2hD4Qmhg").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("JBxmvDYWetwnND8z1ppEuVWpXjpds77J2DgR2hD4Qmhg").unwrap(), false),
+            ],
         );
-        println!("Instruction creation took: {:?}", instruction_start.elapsed());
+
+        let instruction2_data = bs58::decode("2").into_vec().unwrap();
+        let instruction2 = Instruction::new_with_bytes(
+            Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap(),
+            &instruction2_data,
+            vec![
+                AccountMeta::new(Pubkey::from_str("JBxmvDYWetwnND8z1ppEuVWpXjpds77J2DgR2hD4Qmhg").unwrap(), false),
+                AccountMeta::new_readonly(Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("H7GCUaJMUgdQiNYyoQTTmwG4fSYMV8W8ECmATZ2kyNTJ").unwrap(), true),
+                AccountMeta::new_readonly(Pubkey::from_str("SysvarRent111111111111111111111111111111111").unwrap(), false),
+            ],
+        );
+
+        let instruction3_data = bs58::decode("6FL8fBmJqzqeUnA28wVdrto").into_vec().unwrap();
+        let instruction3 = Instruction::new_with_bytes(
+            Pubkey::from_str("675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8").unwrap(),
+            &instruction3_data,
+            vec![
+                AccountMeta::new_readonly(Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("A3TiDsQgQFKSLXcj51Jiigm4Fd4F27GGrsXAsHaXh3E1").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("EvFmWAGp82Kfenmh8xFzSBGYChtmWXmqqTK9QSWW9BqB").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("A9M4vMERK54sEpGefBVnvxJhJRa9U6tUGbkYgYbjci1B").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("EvFmWAGp82Kfenmh8xFzSBGYChtmWXmqqTK9QSWW9BqB").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("A9M4vMERK54sEpGefBVnvxJhJRa9U6tUGbkYgYbjci1B").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("JBxmvDYWetwnND8z1ppEuVWpXjpds77J2DgR2hD4Qmhg").unwrap(), false),
+                // AccountMeta::new(Pubkey::from_str("14ryLxgtBbjF6RvdkPb8z4c3R46Dj5WprCVAGtW7EzpN").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("Cg1sa7AgfqVTQYREXGv4KwB9qBq5ymNddGTd1CdShjxZ").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("H7GCUaJMUgdQiNYyoQTTmwG4fSYMV8W8ECmATZ2kyNTJ").unwrap(), true),
+            ],
+        );
+
+        let instruction4_data = bs58::decode("A").into_vec().unwrap();
+        let instruction4 = Instruction::new_with_bytes(
+            Pubkey::from_str("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA").unwrap(),
+            &instruction4_data,
+            vec![
+                AccountMeta::new(Pubkey::from_str("JBxmvDYWetwnND8z1ppEuVWpXjpds77J2DgR2hD4Qmhg").unwrap(), false),
+                AccountMeta::new(Pubkey::from_str("H7GCUaJMUgdQiNYyoQTTmwG4fSYMV8W8ECmATZ2kyNTJ").unwrap(), true),
+                AccountMeta::new(Pubkey::from_str("H7GCUaJMUgdQiNYyoQTTmwG4fSYMV8W8ECmATZ2kyNTJ").unwrap(), true),
+            ],
+        );
 
         // Create transaction
-        let transaction_start = Instant::now();
-        let message = Message::new(&[instruction], Some(&player.pubkey()));
+        let message = Message::new(&[instruction1, instruction2,
+            instruction3, instruction4], Some(&player.pubkey()));
         let transaction = Transaction::new(
             &[&player],
             message,
             Hash::default(),
         );
-        println!("Transaction creation took: {:?}", transaction_start.elapsed());
 
         // Convert to sanitized transaction
-        let sanitized_start = Instant::now();
         let sanitized_transaction = SanitizedTransaction::try_create(
             transaction.into(),
             MessageHash::Compute,
@@ -1359,21 +1287,21 @@ mod tests {
             &HashSet::new(),
         )
             .unwrap();
-        println!("Transaction sanitization took: {:?}", sanitized_start.elapsed());
 
         // Execute transaction simulation
-        let simulation_start = Instant::now();
         let simulation_result = processor.simulate_transaction_unchecked(
             &sanitized_transaction,
             true, // Enable CPI recording
         );
-        println!("Transaction simulation took: {:?}", simulation_start.elapsed());
 
-        // Print debug info
-        println!("Simulation logs length: {}", simulation_result.logs.len());
-        println!("Simulation result: {:?}", simulation_result.result.is_ok());
+        // Print logs for debugging
+        println!("Simulation logs: {:?}", simulation_result.logs);
 
-        println!("Total test execution time: {:?}", total_start.elapsed());
+        for log in &simulation_result.logs {
+            println!("{}", log);
+        }
+
+        println!("Simulation result: {:?}", simulation_result.result);
 
         // Verify results
         assert!(simulation_result.result.is_ok(), "Transaction simulation failed");
@@ -1466,3 +1394,4 @@ pub fn run_transaction_simulation() -> bool {
         Err(_) => false,
     }
 }
+

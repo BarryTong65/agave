@@ -236,7 +236,7 @@ pub fn create_executable_environment(
                             elf_bytes.len(),
                             &mut LoadProgramMetrics::default(),
                         )
-                        .unwrap(),
+                            .unwrap(),
                     ),
                 );
             }
