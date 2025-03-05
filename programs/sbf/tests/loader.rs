@@ -1,4 +1,4 @@
-#![cfg(feature = "sbf_c")]
+// #![cfg(feature = "sbf_c")]
 #![allow(clippy::uninlined_format_args)]
 #![allow(clippy::arithmetic_side_effects)]
 #![cfg_attr(
