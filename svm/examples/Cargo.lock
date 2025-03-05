@@ -2683,6 +2683,7 @@ dependencies = [
  "base64 0.22.1",
  "bincode",
  "bs58",
+ "byteorder",
  "clap",
  "crossbeam-channel",
  "env_logger",
