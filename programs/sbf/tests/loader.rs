@@ -106,17 +106,17 @@ fn test_instruction_count_tuner() {
         .get_feature_set()
         .is_active(&bpf_account_data_direct_mapping::id());
 
-    // // Serialize account data
-    // let (_serialized, regions, account_lengths) = serialize_parameters(
-    //     invoke_context.transaction_context,
-    //     invoke_context
-    //         .transaction_context
-    //         .get_current_instruction_context()
-    //         .unwrap(),
-    //     !direct_mapping, // copy_account_data
-    // )
-    //     .unwrap();
-    //
+    // Serialize account data
+    let (_serialized, regions, account_lengths) = serialize_parameters(
+        invoke_context.transaction_context,
+        invoke_context
+            .transaction_context
+            .get_current_instruction_context()
+            .unwrap(),
+        !direct_mapping, // copy_account_data
+    )
+        .unwrap();
+
     // let program_runtime_environment = create_program_runtime_environment_v1(
     //     invoke_context.get_feature_set(),
     //     &ComputeBudget::default(),
