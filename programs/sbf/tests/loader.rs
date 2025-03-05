@@ -123,11 +123,11 @@ fn test_instruction_count_tuner() {
         true,
         false,
     );
-    // let executable =
-    //     Executable::<InvokeContext>::from_elf(&elf, Arc::new(program_runtime_environment.unwrap()))
-    //         .unwrap();
-    //
-    // executable.verify::<RequisiteVerifier>().unwrap();
+    let executable =
+        Executable::<InvokeContext>::from_elf(&elf, Arc::new(program_runtime_environment.unwrap()))
+            .unwrap();
+
+    executable.verify::<RequisiteVerifier>().unwrap();
     //
     // create_vm!(
     //     vm,
