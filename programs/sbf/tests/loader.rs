@@ -169,7 +169,7 @@ fn test_create_vm() {
 #[test]
 fn test_instruction_count_tuner() {
     println!("Program test_instruction_count_tuner");
-    // let elf = load_program_from_file("tuner");
+    let elf = load_program_from_file("tuner");
     println!("Program read_to_end");
     with_mock_invoke_context!(invoke_context, bpf_loader::id(), 10000001);
     const BUDGET: u64 = 900_000;
@@ -196,18 +196,18 @@ fn test_instruction_count_tuner() {
         true,
         false,
     );
-    // let executable =
-    //     Executable::<InvokeContext>::from_elf(&elf, Arc::new(program_runtime_environment.unwrap()))
-    //         .unwrap();
+    let executable =
+        Executable::<InvokeContext>::from_elf(&elf, Arc::new(program_runtime_environment.unwrap()))
+            .unwrap();
     let loader = solana_type_overrides::sync::Arc::new(BuiltinProgram::new_mock());
     let function_registry = solana_sbpf::program::FunctionRegistry::default();
-    let executable = solana_sbpf::elf::Executable::<InvokeContext>::from_text_bytes(
-        &[0x9D, 0, 0, 0, 0, 0, 0, 0],
-        loader,
-        SBPFVersion::V3,
-        function_registry,
-    )
-    .unwrap();
+    // let executable = solana_sbpf::elf::Executable::<InvokeContext>::from_text_bytes(
+    //     &[0x9D, 0, 0, 0, 0, 0, 0, 0],
+    //     loader,
+    //     SBPFVersion::V3,
+    //     function_registry,
+    // )
+    // .unwrap();
 
     executable.verify::<RequisiteVerifier>().unwrap();
 
