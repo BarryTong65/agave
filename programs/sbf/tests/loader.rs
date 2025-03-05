@@ -122,7 +122,7 @@ fn clone_regions(regions: &[MemoryRegion]) -> Vec<MemoryRegion> {
 }
 
 #[test]
-fn bench_create_vm() {
+fn test_create_vm() {
     let elf = load_program_from_file("noop");
     with_mock_invoke_context!(invoke_context, bpf_loader::id(), 10000001);
     const BUDGET: u64 = 200_000;
