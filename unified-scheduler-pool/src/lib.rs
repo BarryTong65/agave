@@ -328,7 +328,7 @@ where
                     // code-path via ::take_scheduler().
                     #[allow(unstable_name_collisions)]
                     {
-                        idle_inners.extend(scheduler_inners.extract_if(|(_inner, pooled_at)| {
+                        idle_inners.extend(scheduler_inners.extract_if(|(_inner, pooled_at): (_, _)| {
                             now.duration_since(*pooled_at) > max_pooling_duration
                         }));
                     }
@@ -361,11 +361,9 @@ where
                     };
                     #[allow(unstable_name_collisions)]
                     {
-                        expired_listeners.extend(timeout_listeners.extract_if(
-                            |(_callback, registered_at)| {
-                                now.duration_since(*registered_at) > timeout_duration
-                            },
-                        ));
+                        expired_listeners.extend(timeout_listeners.extract_if(|(_callback, registered_at)| {
+                            now.duration_since(*registered_at) > timeout_duration
+                        }));
                     }
                     drop(timeout_listeners);
 
