@@ -219,7 +219,7 @@ impl BankingStageHelper {
 }
 
 pub type DefaultSchedulerPool =
-    SchedulerPool<PooledScheduler<DefaultTaskHandler>, DefaultTaskHandler>;
+SchedulerPool<PooledScheduler<DefaultTaskHandler>, DefaultTaskHandler>;
 
 const DEFAULT_POOL_CLEANER_INTERVAL: Duration = Duration::from_secs(10);
 const DEFAULT_MAX_POOLING_DURATION: Duration = Duration::from_secs(180);
@@ -327,9 +327,9 @@ where
                     // Note that this critical section could block the latency-sensitive replay
                     // code-path via ::take_scheduler().
                     #[allow(unstable_name_collisions)]
-                    idle_inners.extend(scheduler_inners.extract_if(|(_inner, pooled_at): &mut (S::Inner, Instant)| {
+                    idle_inners.extend(scheduler_inners.extract_if(|(_inner, pooled_at)| {
                         now.duration_since(*pooled_at) > max_pooling_duration
-                    }, Vec::new()));
+                    }));
                     drop(scheduler_inners);
 
                     let idle_inner_count = idle_inners.len();
@@ -358,9 +358,11 @@ where
                         break;
                     };
                     #[allow(unstable_name_collisions)]
-                    expired_listeners.extend(timeout_listeners.extract_if(|(_callback, registered_at): &mut (TimeoutListener, Instant)| {
-                        now.duration_since(*registered_at) > timeout_duration
-                    }, Vec::new()));
+                    expired_listeners.extend(timeout_listeners.extract_if(
+                        |(_callback, registered_at)| {
+                            now.duration_since(*registered_at) > timeout_duration
+                        },
+                    ));
                     drop(timeout_listeners);
 
                     let count = expired_listeners.len();
@@ -2999,7 +3001,7 @@ mod tests {
     }
 
     impl<const TRIGGER_RACE_CONDITION: bool> InstalledScheduler
-        for AsyncScheduler<TRIGGER_RACE_CONDITION>
+    for AsyncScheduler<TRIGGER_RACE_CONDITION>
     {
         fn id(&self) -> SchedulerId {
             unimplemented!();
@@ -3082,7 +3084,7 @@ mod tests {
     }
 
     impl<const TRIGGER_RACE_CONDITION: bool> UninstalledScheduler
-        for AsyncScheduler<TRIGGER_RACE_CONDITION>
+    for AsyncScheduler<TRIGGER_RACE_CONDITION>
     {
         fn return_to_pool(self: Box<Self>) {
             self.3.clone().return_scheduler(*self)
@@ -3090,7 +3092,7 @@ mod tests {
     }
 
     impl<const TRIGGER_RACE_CONDITION: bool> SpawnableScheduler<DefaultTaskHandler>
-        for AsyncScheduler<TRIGGER_RACE_CONDITION>
+    for AsyncScheduler<TRIGGER_RACE_CONDITION>
     {
         // well, i wish i can use ! (never type).....
         type Inner = Self;
