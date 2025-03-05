@@ -98,14 +98,14 @@ fn test_instruction_count_tuner() {
     println!("Program test_instruction_count_tuner");
     let elf = load_program_from_file("tuner");
     println!("Program read_to_end");
-    // with_mock_invoke_context!(invoke_context, bpf_loader::id(), 10000001);
-    // const BUDGET: u64 = 900_000;
-    // invoke_context.mock_set_remaining(BUDGET);
-    //
-    // let direct_mapping = invoke_context
-    //     .get_feature_set()
-    //     .is_active(&bpf_account_data_direct_mapping::id());
-    //
+    with_mock_invoke_context!(invoke_context, bpf_loader::id(), 10000001);
+    const BUDGET: u64 = 900_000;
+    invoke_context.mock_set_remaining(BUDGET);
+
+    let direct_mapping = invoke_context
+        .get_feature_set()
+        .is_active(&bpf_account_data_direct_mapping::id());
+
     // // Serialize account data
     // let (_serialized, regions, account_lengths) = serialize_parameters(
     //     invoke_context.transaction_context,
