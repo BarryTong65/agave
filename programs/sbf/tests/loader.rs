@@ -124,6 +124,9 @@ fn clone_regions(regions: &[MemoryRegion]) -> Vec<MemoryRegion> {
 
 #[test]
 fn test_create_vm() {
+    use std::time::Instant;
+
+    let start = Instant::now();
     let elf = load_program_from_file("tuner");
     with_mock_invoke_context!(invoke_context, bpf_loader::id(), 10000001);
     const BUDGET: u64 = 200_000;
@@ -155,15 +158,21 @@ fn test_create_vm() {
     )
         .unwrap();
 
+    let vm_creation_start = Instant::now();
+    create_vm!(
+        vm,
+        &executable,
+        clone_regions(&regions),
+        account_lengths.clone(),
+        &mut invoke_context,
+    );
+    let vm_creation_duration = vm_creation_start.elapsed();
 
-        create_vm!(
-            vm,
-            &executable,
-            clone_regions(&regions),
-            account_lengths.clone(),
-            &mut invoke_context,
-        );
-        vm.unwrap();
+    vm.unwrap();
+
+    let total_duration = start.elapsed();
+    println!("VM creation time: {:?}", vm_creation_duration);
+    println!("Total test execution time: {:?}", total_duration);
 }
 
 #[test]
