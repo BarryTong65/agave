@@ -87,6 +87,12 @@ macro_rules! with_mock_invoke_context {
     };
 }
 
+
+#[test]
+fn minimal_test() {
+    println!("Minimal test running");
+}
+
 #[test]
 fn test_instruction_count_tuner() {
     println!("Program test_instruction_count_tuner");
