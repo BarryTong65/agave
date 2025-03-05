@@ -88,6 +88,8 @@ macro_rules! with_mock_invoke_context {
 }
 
 
+
+
 #[test]
 fn minimal_test() {
     println!("Minimal test running");
@@ -128,14 +130,14 @@ fn test_instruction_count_tuner() {
             .unwrap();
 
     executable.verify::<RequisiteVerifier>().unwrap();
-    //
-    // create_vm!(
-    //     vm,
-    //     &executable,
-    //     regions,
-    //     account_lengths,
-    //     &mut invoke_context,
-    // );
+
+    create_vm!(
+        vm,
+        &executable,
+        regions,
+        account_lengths,
+        &mut invoke_context,
+    );
     // let (mut vm, _, _) = vm.unwrap();
     //
     // let mut measure = Measure::start("tune");
