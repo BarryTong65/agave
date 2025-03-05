@@ -228,7 +228,7 @@ fn bench_program_execute_noop(bencher: &mut Bencher) {
 }
 
 #[bench]
-fn bench_create_vm(bencher: &mut Bencher) {
+fn test_create_vm(bencher: &mut Bencher) {
     let elf = load_program_from_file("noop");
     with_mock_invoke_context!(invoke_context, bpf_loader::id(), 10000001);
     const BUDGET: u64 = 200_000;
