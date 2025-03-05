@@ -95,6 +95,76 @@ fn minimal_test() {
     println!("Minimal test running");
 }
 
+fn clone_regions(regions: &[MemoryRegion]) -> Vec<MemoryRegion> {
+    unsafe {
+        regions
+            .iter()
+            .map(|region| match region.state.get() {
+                MemoryState::Readable => MemoryRegion::new_readonly(
+                    slice::from_raw_parts(region.host_addr.get() as *const _, region.len as usize),
+                    region.vm_addr,
+                ),
+                MemoryState::Writable => MemoryRegion::new_writable(
+                    slice::from_raw_parts_mut(
+                        region.host_addr.get() as *mut _,
+                        region.len as usize,
+                    ),
+                    region.vm_addr,
+                ),
+                MemoryState::Cow(id) => MemoryRegion::new_cow(
+                    slice::from_raw_parts(region.host_addr.get() as *const _, region.len as usize),
+                    region.vm_addr,
+                    id,
+                ),
+            })
+            .collect()
+    }
+}
+
+#[test]
+fn bench_create_vm() {
+    let elf = load_program_from_file("noop");
+    with_mock_invoke_context!(invoke_context, bpf_loader::id(), 10000001);
+    const BUDGET: u64 = 200_000;
+    invoke_context.mock_set_remaining(BUDGET);
+
+    let direct_mapping = invoke_context
+        .get_feature_set()
+        .is_active(&bpf_account_data_direct_mapping::id());
+    let program_runtime_environment = create_program_runtime_environment_v1(
+        invoke_context.get_feature_set(),
+        &ComputeBudget::default(),
+        true,
+        false,
+    );
+    let executable =
+        Executable::<InvokeContext>::from_elf(&elf, Arc::new(program_runtime_environment.unwrap()))
+            .unwrap();
+
+    executable.verify::<RequisiteVerifier>().unwrap();
+
+    // Serialize account data
+    let (_serialized, regions, account_lengths) = serialize_parameters(
+        invoke_context.transaction_context,
+        invoke_context
+            .transaction_context
+            .get_current_instruction_context()
+            .unwrap(),
+        !direct_mapping, // copy_account_data,
+    )
+        .unwrap();
+
+
+        create_vm!(
+            vm,
+            &executable,
+            clone_regions(&regions),
+            account_lengths.clone(),
+            &mut invoke_context,
+        );
+        vm.unwrap();
+}
+
 #[test]
 fn test_instruction_count_tuner() {
     println!("Program test_instruction_count_tuner");
