@@ -138,13 +138,13 @@ fn test_instruction_count_tuner() {
         account_lengths,
         &mut invoke_context,
     );
-    // let (mut vm, _, _) = vm.unwrap();
-    //
-    // let mut measure = Measure::start("tune");
-    // let (instructions, _result) = vm.execute_program(&executable, true);
-    // println!("Program executed with result: {:?}", _result);
-    // measure.stop();
-    //
+    let (mut vm, _, _) = vm.unwrap();
+
+    let mut measure = Measure::start("tune");
+    let (instructions, _result) = vm.execute_program(&executable, true);
+    println!("Program executed with result: {:?}", _result);
+    measure.stop();
+
     // assert_eq!(
     //     0,
     //     vm.context_object_pointer.get_remaining(),
