@@ -140,10 +140,12 @@ fn test_instruction_count_tuner() {
     );
     let (mut vm, _, _) = vm.unwrap();
 
-    let mut measure = Measure::start("tune");
-    let (instructions, _result) = vm.execute_program(&executable, true);
-    println!("Program executed with result: {:?}", _result);
-    measure.stop();
+    println!("create_vm");
+
+    // let mut measure = Measure::start("tune");
+    // let (instructions, _result) = vm.execute_program(&executable, true);
+    // println!("Program executed with result: {:?}", _result);
+    // measure.stop();
 
     // assert_eq!(
     //     0,
