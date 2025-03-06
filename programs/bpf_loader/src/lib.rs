@@ -1593,7 +1593,7 @@ fn execute<'a, 'b: 'a>(
     #[cfg(any(target_os = "windows", not(target_arch = "x86_64")))]
     let use_jit = false;
     #[cfg(all(not(target_os = "windows"), target_arch = "x86_64"))]
-    let use_jit = executable.get_compiled_program().is_some();
+    let use_jit = false;
     println!("bpf_loader_execute - use_jit initialized to: {}", use_jit);
 
     let direct_mapping = invoke_context
@@ -1661,12 +1661,12 @@ fn execute<'a, 'b: 'a>(
         println!("bpf_loader_execute - program execution took: {:?}", execution_took);
 
         let cleanup_start = Instant::now();
-        MEMORY_POOL.with_borrow_mut(|memory_pool| {
-            memory_pool.put_stack(stack);
-            memory_pool.put_heap(heap);
-            debug_assert!(memory_pool.stack_len() <= MAX_INSTRUCTION_STACK_DEPTH);
-            debug_assert!(memory_pool.heap_len() <= MAX_INSTRUCTION_STACK_DEPTH);
-        });
+        // MEMORY_POOL.with_borrow_mut(|memory_pool| {
+        //     memory_pool.put_stack(stack);
+        //     memory_pool.put_heap(heap);
+        //     debug_assert!(memory_pool.stack_len() <= MAX_INSTRUCTION_STACK_DEPTH);
+        //     debug_assert!(memory_pool.heap_len() <= MAX_INSTRUCTION_STACK_DEPTH);
+        // });
         drop(vm);
         if let Some(execute_time) = invoke_context.execute_time.as_mut() {
             execute_time.stop();
