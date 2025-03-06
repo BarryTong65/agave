@@ -115,6 +115,8 @@ fn clone_regions(regions: &[MemoryRegion]) -> Vec<MemoryRegion> {
             .collect()
     }
 }
+
+
 #[cfg(feature = "sbf_c")]
 pub fn test_create_vm_wrapper() -> Result<(), String> {
     use std::time::Instant;
@@ -211,6 +213,103 @@ pub fn test_create_vm_wrapper() -> Result<(), String> {
 pub extern "C" fn call_test_create_vm() -> c_int {
     // Call the function and return a status code
     match test_create_vm_wrapper() {
+        Ok(_) => 0,
+        Err(_) => 1,
+    }
+}
+
+#[cfg(feature = "sbf_c")]
+pub fn test_instruction_count_tuner_wrapper() -> Result<(), String> {
+    use std::time::Instant;
+    // We wrap the test in a function that returns a Result
+    match std::panic::catch_unwind(|| {
+        println!("Program test_instruction_count_tuner");
+        //let elf = load_program_from_file("tuner");
+        println!("Program read_to_end");
+        with_mock_invoke_context!(invoke_context, bpf_loader::id(), 10000001);
+        const BUDGET: u64 = 900_000;
+        invoke_context.mock_set_remaining(BUDGET);
+
+        let direct_mapping = invoke_context
+            .get_feature_set()
+            .is_active(&bpf_account_data_direct_mapping::id());
+
+        // Serialize account data
+        let (_serialized, regions, account_lengths) = serialize_parameters(
+            invoke_context.transaction_context,
+            invoke_context
+                .transaction_context
+                .get_current_instruction_context()
+                .unwrap(),
+            !direct_mapping, // copy_account_data
+        )
+            .unwrap();
+
+        let program_runtime_environment = create_program_runtime_environment_v1(
+            invoke_context.get_feature_set(),
+            &ComputeBudget::default(),
+            true,
+            false,
+        );
+        // let executable =
+        //     Executable::<InvokeContext>::from_elf(&elf, Arc::new(program_runtime_environment.unwrap()))
+        //         .unwrap();
+        let loader = solana_type_overrides::sync::Arc::new(program_runtime_environment.unwrap());
+        let function_registry = solana_sbpf::program::FunctionRegistry::default();
+        let executable = solana_sbpf::elf::Executable::<InvokeContext>::from_text_bytes(
+            &[0x9D, 0, 0, 0, 0, 0, 0, 0],
+            loader,
+            SBPFVersion::V3,
+            function_registry,
+        )
+            .unwrap();
+
+        executable.verify::<RequisiteVerifier>().unwrap();
+
+        create_vm!(
+        vm,
+        &executable,
+        regions,
+        account_lengths,
+        &mut invoke_context,
+    );
+        let (mut vm, _, _) = vm.unwrap();
+
+        println!("create_vm");
+
+        let mut measure = Measure::start("tune");
+        let (instructions, _result) = vm.execute_program(&executable, true);
+        println!("Program executed with result: {:?}", _result);
+        measure.stop();
+
+        // assert_eq!(
+        //     0,
+        //     vm.context_object_pointer.get_remaining(),
+        //     "Tuner must consume the whole budget"
+        // );
+        println!(
+            "{:?} compute units took {:?} us ({:?} instructions)",
+            BUDGET - vm.context_object_pointer.get_remaining(),
+            measure.as_us(),
+            instructions,
+        );
+        println!("Finished bench_instruction_count_tuner test");
+    }) {
+        Ok(_) => {
+            println!("Test completed successfully");
+            Ok(())
+        },
+        Err(e) => {
+            println!("Test failed with error: {:?}", e);
+            Err("test_create_vm panicked".to_string())
+        },
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn call_test_instruction_count_tuner() -> c_int {
+    // Call the function and return a status code
+    match test_instruction_count_tuner_wrapper() {
         Ok(_) => 0,
         Err(_) => 1,
     }
