@@ -115,32 +115,56 @@ fn clone_regions(regions: &[MemoryRegion]) -> Vec<MemoryRegion> {
             .collect()
     }
 }
-
 #[cfg(feature = "sbf_c")]
 pub fn test_create_vm_wrapper() -> Result<(), String> {
+    use std::time::Instant;
     // We wrap the test in a function that returns a Result
     match std::panic::catch_unwind(|| {
+        let total_start = Instant::now();
+
+        let load_start = Instant::now();
         let elf = load_program_from_file("tuner");
+        let load_duration = load_start.elapsed();
+        println!("Step 1: Load program from file - {:?}", load_duration);
+
+        let context_start = Instant::now();
         with_mock_invoke_context!(invoke_context, bpf_loader::id(), 10000001);
         const BUDGET: u64 = 200_000;
         invoke_context.mock_set_remaining(BUDGET);
+        let context_duration = context_start.elapsed();
+        println!("Step 2: Setup invoke context - {:?}", context_duration);
 
+        let feature_start = Instant::now();
         let direct_mapping = invoke_context
             .get_feature_set()
             .is_active(&bpf_account_data_direct_mapping::id());
+        let feature_duration = feature_start.elapsed();
+        println!("Step 3: Get feature set - {:?}", feature_duration);
+
+        let env_start = Instant::now();
         let program_runtime_environment = create_program_runtime_environment_v1(
             invoke_context.get_feature_set(),
             &ComputeBudget::default(),
             true,
             false,
         );
+        let env_duration = env_start.elapsed();
+        println!("Step 4: Create runtime environment - {:?}", env_duration);
+
+        let executable_start = Instant::now();
         let executable =
             Executable::<InvokeContext>::from_elf(&elf, Arc::new(program_runtime_environment.unwrap()))
                 .unwrap();
+        let executable_duration = executable_start.elapsed();
+        println!("Step 5: Create executable from ELF - {:?}", executable_duration);
 
+        let verify_start = Instant::now();
         executable.verify::<RequisiteVerifier>().unwrap();
+        let verify_duration = verify_start.elapsed();
+        println!("Step 6: Verify executable - {:?}", verify_duration);
 
         // Serialize account data
+        let serialize_start = Instant::now();
         let (_serialized, regions, account_lengths) = serialize_parameters(
             invoke_context.transaction_context,
             invoke_context
@@ -150,8 +174,10 @@ pub fn test_create_vm_wrapper() -> Result<(), String> {
             !direct_mapping, // copy_account_data,
         )
             .unwrap();
+        let serialize_duration = serialize_start.elapsed();
+        println!("Step 7: Serialize parameters - {:?}", serialize_duration);
 
-
+        let vm_start = Instant::now();
         create_vm!(
             vm,
             &executable,
@@ -159,13 +185,27 @@ pub fn test_create_vm_wrapper() -> Result<(), String> {
             account_lengths.clone(),
             &mut invoke_context,
         );
+        let vm_creation_duration = vm_start.elapsed();
+        println!("Step 8: Create VM - {:?}", vm_creation_duration);
+
+        let unwrap_start = Instant::now();
         vm.unwrap();
+        let unwrap_duration = unwrap_start.elapsed();
+        println!("Step 9: Unwrap VM - {:?}", unwrap_duration);
+
+        let total_duration = total_start.elapsed();
+        println!("Total execution time: {:?}", total_duration);
     }) {
-        Ok(_) => Ok(()),
-        Err(_) => Err("test_create_vm panicked".to_string()),
+        Ok(_) => {
+            println!("Test completed successfully");
+            Ok(())
+        },
+        Err(e) => {
+            println!("Test failed with error: {:?}", e);
+            Err("test_create_vm panicked".to_string())
+        },
     }
 }
-
 
 #[no_mangle]
 pub extern "C" fn call_test_create_vm() -> c_int {
