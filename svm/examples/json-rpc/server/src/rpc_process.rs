@@ -1181,7 +1181,7 @@ mod tests {
     };
 
     fn create_test_processor() -> JsonRpcRequestProcessor {
-        let accounts_path = PathBuf::from("/Users/barry/binance/agave/svm/examples/json-rpc/program/accounts-ray.json");
+        let accounts_path = PathBuf::from("/workdir/agave/svm/examples/json-rpc/program/accounts-ray.json");
         let ledger_path = PathBuf::from("");
 
         let config = JsonRpcConfig {
