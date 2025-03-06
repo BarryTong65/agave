@@ -1199,7 +1199,11 @@ mod tests {
     #[test]
     fn test_simulate_transaction() {
         let processor = create_test_processor();
-
+        if cfg!(feature = "jit") {
+            println!("jit is enabled");
+        }else{
+            println!("jit is not enabled");
+        }
         // Create player from base58 private key
         let player_keypair_str = "x";
         let player_keypair_bytes = bs58::decode(player_keypair_str)
