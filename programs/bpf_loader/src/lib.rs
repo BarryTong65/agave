@@ -1591,7 +1591,7 @@ fn execute<'a, 'b: 'a>(
 
     let jit_setup_start = Instant::now();
     #[cfg(any(target_os = "windows", not(target_arch = "x86_64")))]
-    let use_jit = true;
+    let use_jit = false;
     #[cfg(all(not(target_os = "windows"), target_arch = "x86_64"))]
     let use_jit = executable.get_compiled_program().is_some();
     println!("bpf_loader_execute - use_jit initialized to: {}", use_jit);
