@@ -1276,7 +1276,7 @@ mod tests {
     fn create_test_processor() -> JsonRpcRequestProcessor {
         let start = Instant::now();
 
-        let accounts_path = PathBuf::from("/home/barry.t/binance/agave/svm/examples/json-rpc/program/accounts-bak.json");
+        let accounts_path = PathBuf::from("/workdir/agave/svm/examples/json-rpc/program/accounts-bak.json");
         //let accounts_path = PathBuf::from("/Users/barry/binance/agave/svm/examples/json-rpc/program/accounts-bak.json");
         let ledger_path = PathBuf::from("");
 
