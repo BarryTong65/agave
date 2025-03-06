@@ -41,3 +41,4 @@ tokio-util = { workspace = true, features = ["codec", "compat"] }
 [features]
 dummy-for-ci-check = []
 frozen-abi = []
+jit = []

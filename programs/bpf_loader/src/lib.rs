@@ -1594,6 +1594,8 @@ fn execute<'a, 'b: 'a>(
     let use_jit = false;
     if cfg!(feature = "jit") {
         println!("jit is enabled");
+    }else{
+        println!("jit is not enabled");
     }
     #[cfg(all(not(target_os = "windows"), target_arch = "x86_64"))]
     let use_jit = executable.get_compiled_program().is_some();
