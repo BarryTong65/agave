@@ -1598,7 +1598,7 @@ fn execute<'a, 'b: 'a>(
         println!("jit is not enabled");
     }
     #[cfg(all(not(target_os = "windows"), target_arch = "x86_64"))]
-    let use_jit = executable.get_compiled_program().is_some();
+    let use_jit = false;
     println!("bpf_loader_execute - use_jit initialized to: {}", use_jit);
 
     let direct_mapping = invoke_context
