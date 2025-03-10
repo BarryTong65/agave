@@ -12,22 +12,22 @@ declare_builtin_function!(
         _arg5: u64,
         memory_mapping: &mut MemoryMapping,
     ) -> Result<u64, Error> {
-        let cost = invoke_context
-            .get_compute_budget()
-            .syscall_base_cost
-            .max(len);
-        consume_compute_meter(invoke_context, cost)?;
-
-        translate_string_and_do(
-            memory_mapping,
-            addr,
-            len,
-            invoke_context.get_check_aligned(),
-            &mut |string: &str| {
-                stable_log::program_log(&invoke_context.get_log_collector(), string);
-                Ok(0)
-            },
-        )?;
+        // let cost = invoke_context
+        //     .get_compute_budget()
+        //     .syscall_base_cost
+        //     .max(len);
+        // consume_compute_meter(invoke_context, cost)?;
+        //
+        // translate_string_and_do(
+        //     memory_mapping,
+        //     addr,
+        //     len,
+        //     invoke_context.get_check_aligned(),
+        //     &mut |string: &str| {
+        //         stable_log::program_log(&invoke_context.get_log_collector(), string);
+        //         Ok(0)
+        //     },
+        // )?;
         Ok(0)
     }
 );
@@ -44,13 +44,13 @@ declare_builtin_function!(
         arg5: u64,
         _memory_mapping: &mut MemoryMapping,
     ) -> Result<u64, Error> {
-        let cost = invoke_context.get_compute_budget().log_64_units;
-        consume_compute_meter(invoke_context, cost)?;
-
-        stable_log::program_log(
-            &invoke_context.get_log_collector(),
-            &format!("{arg1:#x}, {arg2:#x}, {arg3:#x}, {arg4:#x}, {arg5:#x}"),
-        );
+        // let cost = invoke_context.get_compute_budget().log_64_units;
+        // consume_compute_meter(invoke_context, cost)?;
+        //
+        // stable_log::program_log(
+        //     &invoke_context.get_log_collector(),
+        //     &format!("{arg1:#x}, {arg2:#x}, {arg3:#x}, {arg4:#x}, {arg5:#x}"),
+        // );
         Ok(0)
     }
 );
@@ -67,14 +67,14 @@ declare_builtin_function!(
         _arg5: u64,
         _memory_mapping: &mut MemoryMapping,
     ) -> Result<u64, Error> {
-        let cost = invoke_context.get_compute_budget().syscall_base_cost;
-        consume_compute_meter(invoke_context, cost)?;
-
-        ic_logger_msg!(
-            invoke_context.get_log_collector(),
-            "Program consumption: {} units remaining",
-            invoke_context.get_remaining(),
-        );
+        // let cost = invoke_context.get_compute_budget().syscall_base_cost;
+        // consume_compute_meter(invoke_context, cost)?;
+        //
+        // ic_logger_msg!(
+        //     invoke_context.get_log_collector(),
+        //     "Program consumption: {} units remaining",
+        //     invoke_context.get_remaining(),
+        // );
         Ok(0)
     }
 );
@@ -91,15 +91,15 @@ declare_builtin_function!(
         _arg5: u64,
         memory_mapping: &mut MemoryMapping,
     ) -> Result<u64, Error> {
-        let cost = invoke_context.get_compute_budget().log_pubkey_units;
-        consume_compute_meter(invoke_context, cost)?;
-
-        let pubkey = translate_type::<Pubkey>(
-            memory_mapping,
-            pubkey_addr,
-            invoke_context.get_check_aligned(),
-        )?;
-        stable_log::program_log(&invoke_context.get_log_collector(), &pubkey.to_string());
+        // let cost = invoke_context.get_compute_budget().log_pubkey_units;
+        // consume_compute_meter(invoke_context, cost)?;
+        //
+        // let pubkey = translate_type::<Pubkey>(
+        //     memory_mapping,
+        //     pubkey_addr,
+        //     invoke_context.get_check_aligned(),
+        // )?;
+        // stable_log::program_log(&invoke_context.get_log_collector(), &pubkey.to_string());
         Ok(0)
     }
 );
